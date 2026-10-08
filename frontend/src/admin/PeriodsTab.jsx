@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { announceChange } from './Console.jsx';
 import { PageHead, Field, Notice, Spinner } from './ui.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
 
 /*
  * The period grid every other view is drawn on. Sessions point at periods by
@@ -18,10 +19,10 @@ const fromConfig = c => ({
 });
 
 export default function PeriodsTab() {
+  const { toast } = useFeedback();
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(null);
   const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export default function PeriodsTab() {
   });
 
   async function save() {
-    setBusy(true); setError(''); setOk('');
+    setBusy(true); setError('');
     try {
       /* blank rows are refused rather than dropped, so the lunch marker and
          every later slot number stay exactly where they appear on screen */
@@ -68,10 +69,9 @@ export default function PeriodsTab() {
       setSaved(c);
       setDraft(fromConfig(c));
       announceChange();
-      setOk(c.activitiesCleared
+      toast(c.activitiesCleared
         ? `Period grid saved. ${c.activitiesCleared} logged activit${c.activitiesCleared > 1 ? 'ies' : 'y'} on removed periods were cleared.`
         : 'Period grid saved.');
-      setTimeout(() => setOk(''), 2600);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -90,7 +90,7 @@ export default function PeriodsTab() {
         </button>
       </PageHead>
 
-      <Notice error={error} ok={ok} />
+      <Notice error={error} />
 
       <div className="card">
         <h2>Periods</h2>

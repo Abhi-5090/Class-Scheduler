@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { announceChange } from './Console.jsx';
 import { Modal, PageHead, Field, Notice, EmptyState, Spinner } from './ui.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
 
 const blank = { name: '', order: 0, pending: false, note: '' };
 
 export default function GroupsTab() {
+  const { toast, confirm } = useFeedback();
   const [rows, setRows] = useState(null);
   const [batches, setBatches] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -25,7 +27,7 @@ export default function GroupsTab() {
   };
   useEffect(() => { reload(); }, []);
 
-  const flash = msg => { setOk(msg); setError(''); setTimeout(() => setOk(''), 2600); };
+  const flash = msg => { setError(''); toast(msg); };
   const held = name => batches.filter(b => b.group === name);
 
   async function save() {
@@ -48,29 +50,52 @@ export default function GroupsTab() {
   }
 
   async function remove(g) {
-    if (!window.confirm(`Delete "${g.name}"?\n\nThis cannot be undone.`)) return;
+    const using = held(g.name);
+    if (using.length) {
+      /* the API refuses this anyway; say so up front, and say what to do */
+      await confirm({
+        title: `${g.name} still has batches`,
+        body: (
+          <>
+            <p><b>{using.length} batch{using.length === 1 ? '' : 'es'}</b> belong to this year group. Move them to another year, or delete them, before deleting the group:</p>
+            <ul className="impact">{using.slice(0, 8).map(b => <li key={b._id}>{b.name}</li>)}{using.length > 8 && <li>…and {using.length - 8} more</li>}</ul>
+          </>
+        ),
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+      });
+      return;
+    }
+    const sure = await confirm({
+      title: `Delete "${g.name}"?`,
+      body: <p>No batch uses this year group, so nothing else changes. This cannot be undone.</p>,
+      confirmLabel: 'Delete year group',
+      danger: true,
+    });
+    if (!sure) return;
     try {
       await api.remove('groups', g._id);
       await reload();
       announceChange();
       flash(`Deleted ${g.name}`);
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   /* Order is what the board reads top to bottom, so nudging beats typing. */
   async function move(g, dir) {
-    const sorted = [...rows].sort((a, b) => a.order - b.order);
+    const sorted = [...rows].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const i = sorted.findIndex(x => x._id === g._id);
     const j = i + dir;
     if (j < 0 || j >= sorted.length) return;
+    /* renumber the whole list 0..n so two groups sharing a number can still
+       be told apart and moved */
+    const next = [...sorted];
+    [next[i], next[j]] = [next[j], next[i]];
     try {
-      await Promise.all([
-        api.update('groups', sorted[i]._id, { order: sorted[j].order }),
-        api.update('groups', sorted[j]._id, { order: sorted[i].order }),
-      ]);
+      await Promise.all(next.map((x, k) => (x.order === k ? null : api.update('groups', x._id, { order: k }))));
       await reload();
       announceChange();
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   if (!rows) {
@@ -84,7 +109,7 @@ export default function GroupsTab() {
     );
   }
 
-  const sorted = [...rows].sort((a, b) => a.order - b.order);
+  const sorted = [...rows].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 
   return (
     <>
@@ -112,27 +137,28 @@ export default function GroupsTab() {
           </EmptyState>
         ) : (
           <div className="tbl-wrap">
-            <table className="tbl">
+            <table className="tbl stack">
+              <caption className="sr-only">Year groups in board order</caption>
               <thead>
                 <tr><th>Order</th><th>Year group</th><th>Batches</th><th>Status</th><th className="act">Actions</th></tr>
               </thead>
               <tbody>
                 {sorted.map((g, i) => (
                   <tr key={g._id}>
-                    <td>
-                      <button className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => move(g, -1)} aria-label="Move up">↑</button>
-                      <button className="btn btn-ghost btn-sm" style={{ marginLeft: 5 }} disabled={i === sorted.length - 1} onClick={() => move(g, 1)} aria-label="Move down">↓</button>
+                    <td data-label="Order">
+                      <button className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => move(g, -1)} aria-label={`Move ${g.name} up`}>↑</button>
+                      <button className="btn btn-ghost btn-sm" style={{ marginLeft: 5 }} disabled={i === sorted.length - 1} onClick={() => move(g, 1)} aria-label={`Move ${g.name} down`}>↓</button>
                     </td>
-                    <td className="nm">{g.name}</td>
-                    <td className="mono">{held(g.name).length}</td>
-                    <td>
+                    <td className="nm" data-label="Year group">{g.name}</td>
+                    <td className="mono" data-label="Batches">{held(g.name).length}</td>
+                    <td data-label="Status">
                       {g.pending
                         ? <span className="pill-tag grey">awaiting schedule</span>
                         : <span className="pill-tag">live</span>}
                     </td>
                     <td className="act">
-                      <button className="btn btn-ghost btn-sm" onClick={() => open({ ...g })}>Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => remove(g)}>Delete</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => open({ ...g })} aria-label={`Edit ${g.name}`}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => remove(g)} aria-label={`Delete ${g.name}`}>Delete</button>
                     </td>
                   </tr>
                 ))}
@@ -151,7 +177,7 @@ export default function GroupsTab() {
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
-                {editing._id ? 'Save changes' : 'Add year group'}
+                {saving ? 'Saving…' : editing._id ? 'Save changes' : 'Add year group'}
               </button>
             </>
           }

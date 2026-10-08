@@ -447,3 +447,55 @@ table.tbl td.act .btn{margin-left:7px}
   .slotpick button{min-height:42px; padding:4px 2px}
   .slotpick button .t{font-size:8px}
 }
+
+/* ═══════════ admin tables: search, sort, phone layout ═══════════ */
+.modal.wide{max-width:980px}
+.admin-search{flex:1; min-width:220px; max-width:360px; align-self:flex-end}
+.admin-search input{width:100%}
+.admin-search svg{width:16px; height:16px; stroke:var(--muted)}
+.th-sort{all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit}
+.th-sort:hover, .th-sort.on{color:var(--accent-deep)}
+.th-arrow{font-size:9px; opacity:.55}
+.th-sort.on .th-arrow{opacity:1}
+.tbl-note{font-size:12px; color:var(--muted); margin:0 0 10px}
+.clash-link{color:var(--accent-strong); font-weight:700; text-decoration:underline; text-underline-offset:2px}
+
+/* Under 720px a wide table turns into one card per row: each cell shows its
+   column name beside its value, so nothing needs sideways scrolling. */
+@media(max-width:720px){
+  .tbl.stack thead{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+  .tbl.stack, .tbl.stack tbody, .tbl.stack tr, .tbl.stack td{display:block; width:100%}
+  .tbl.stack tr{border:1px solid var(--line); border-radius:14px; padding:6px 12px; margin-bottom:12px; background:var(--card)}
+  .tbl.stack tr:hover td{background:transparent}
+  .tbl.stack td{display:flex; gap:12px; justify-content:space-between; align-items:center; border-top:1px solid var(--line-2);
+    padding:9px 0 !important; text-align:right; font-size:13px}
+  .tbl.stack td:first-child{border-top:0}
+  .tbl.stack td[data-label]::before{content:attr(data-label); font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--muted); text-align:left; flex:none}
+  .tbl.stack td.act{justify-content:flex-end; flex-wrap:wrap; gap:6px}
+  .tbl.stack td.act .btn{margin:0}
+  .tbl-wrap{margin:0; padding:0; overflow:visible}
+  .admin-search{max-width:none; width:100%}
+}
+
+@media(max-width:640px){
+  /* the batch editor uses the full screen width on a phone */
+  .modal.wide{max-width:100%}
+  .modal-back{padding:0}
+  .modal{border-radius:20px 20px 0 0; max-height:94vh; overflow-y:auto}
+  .sess{padding:12px}
+  .sess-head{flex-wrap:wrap}
+  .slotpick{display:grid; grid-template-columns:repeat(4,1fr)}
+  .toasts{left:12px; right:12px; bottom:12px}
+  .toasts > div{align-items:stretch}
+  .toast{max-width:none}
+}
+
+/* the batch name is what you scan for; actions stay compact on one line */
+@media(min-width:721px){
+  table.tbl td.nm{min-width:170px}
+  table.tbl.stack th{padding:0 10px 11px}
+  table.tbl.stack td{padding:12px 10px}
+  table.tbl td.act .btn-sm{padding:6px 11px}
+  table.tbl td.act .btn{margin-left:5px}
+}

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { reveal } from '../lib/reveal.js';
-import { exportMonthCalendarPDF } from '../lib/pdfExport.js';
+import { useFeedback } from '../lib/feedback.jsx';
+import { useFocusTrap } from '../lib/focus.js';
+import { exportMonthCalendarPDF } from '../lib/pdf.js';
 import {
   MONTH_NAMES,
   MONTH_NAMES_SHORT,
@@ -25,6 +27,7 @@ import {
 } from './Icons.jsx';
 
 export default function CalendarView({ data, admin }) {
+  const { toast } = useFeedback();
   const host = useRef(null);
 
   // Opens on the current month
@@ -144,13 +147,14 @@ export default function CalendarView({ data, admin }) {
   }, [data]);
 
   // Handle PDF Download
-  const handleExportPDF = () => {
-    if (!data) return;
+  const handleExportPDF = async () => {
+    if (!data || exporting) return;
     setExporting(true);
     try {
-      exportMonthCalendarPDF(data, currentYear, currentMonth, groupFilter);
-    } catch (e) {
-      console.error('Failed to export monthly PDF', e);
+      await exportMonthCalendarPDF(data, currentYear, currentMonth, groupFilter);
+      toast(`  calendar downloaded`);
+    } catch {
+      toast('Could not create the PDF — please try again', 'error');
     } finally {
       setExporting(false);
     }
@@ -332,7 +336,9 @@ export default function CalendarView({ data, admin }) {
         <div className="cal-search-wrap">
           <SearchIcon />
           <input
-            type="text"
+            type="search"
+            aria-label="Search the calendar by batch, subject, hall or mentor"
+            maxLength={80}
             className="cal-search-input"
             placeholder="Search batch, subject, hall, mentor…"
             value={query}
@@ -410,7 +416,9 @@ export default function CalendarView({ data, admin }) {
                     onClick={() => handleDayClick(cell.dateStr)}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={e => { if (e.key === 'Enter') handleDayClick(cell.dateStr); }}
+                    aria-label={`${formatDateLong(cell.dateStr)}: ${classes.length} class${classes.length === 1 ? '' : 'es'}${cell.isWeekend ? ', not a teaching day' : ''}`}
+                    aria-pressed={isSelected}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDayClick(cell.dateStr); } }}
                     title={`View schedule for ${cell.dateStr} (${classes.length} class${classes.length === 1 ? '' : 'es'})`}
                   >
                     <div className="cal-day-head">
@@ -606,17 +614,10 @@ export default function CalendarView({ data, admin }) {
 
       {/* ── Interactive Day Detail Inspector Modal ── */}
       {inspectDay && (
-        <div className="modal-back" onClick={() => setInspectDay(null)}>
-          <div
-            className="modal"
-            style={{ maxWidth: 740 }}
-            onClick={e => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
+        <InspectDialog onClose={() => setInspectDay(null)}>
             <div className="cal-modal-day-head">
               <div className="cal-modal-day-title">
-                <h2>{formatDateLong(inspectDay)}</h2>
+                <h2 id="inspect-title">{formatDateLong(inspectDay)}</h2>
                 <span>Institutional Training Schedule & Mentor Assignments</span>
               </div>
               <div className="cal-modal-pills">
@@ -695,9 +696,29 @@ export default function CalendarView({ data, admin }) {
                 Close Breakdown
               </button>
             </div>
-          </div>
-        </div>
+        </InspectDialog>
       )}
+    </div>
+  );
+}
+
+/* The day breakdown: closes on Escape or a click outside, keeps keyboard focus
+   inside while open, and hands it back to the day that opened it. */
+function InspectDialog({ onClose, children }) {
+  const box = useRef(null);
+  useFocusTrap(box);
+  useEffect(() => {
+    const esc = e => { if (e.key === 'Escape') onClose(); };
+    addEventListener('keydown', esc);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { removeEventListener('keydown', esc); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div className="modal-back" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ maxWidth: 740 }} ref={box} role="dialog" aria-modal="true" aria-labelledby="inspect-title">
+        {children}
+      </div>
     </div>
   );
 }

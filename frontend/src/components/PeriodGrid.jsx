@@ -21,26 +21,41 @@ const isClass = v => !!v && !/^lunch\b/i.test(v.trim());
  * that, this component just renders what it's given). `current` is null for
  * a free/plain-lunch cell, or `{ kind, label }` for an existing logged note.
  * A cell already held by a real class (role 'main'/'support') never calls it.
+ *
+ * `now` is periodAt() from lib/now.js: today's column, the running period's
+ * row and the cell where they cross are marked, so the grid answers "what is
+ * happening right now?" at a glance.
  */
-export default function PeriodGrid({ entity, slots, days, lunchIndex, onEditCell }) {
+export default function PeriodGrid({ entity, slots, days, lunchIndex, onEditCell, now }) {
   return (
     <div className="tt-scroll">
       <div className="ttgrid" style={{ '--daycols': days.length }}>
         <div />
-        {days.map(d => <div className="tt-dh" key={d}>{dayShort(d)}</div>)}
+        {days.map(d => (
+          <div className={`tt-dh ${now?.today === d ? 'today' : ''}`} key={d}>
+            {dayShort(d)}{now?.today === d && <span className="sr-only"> (today)</span>}
+          </div>
+        ))}
 
         {slots.map((label, i) => (
-          <Row key={i} i={i} label={label} entity={entity} days={days} lunchIndex={lunchIndex} onEditCell={onEditCell} />
+          <Row key={i} i={i} label={label} entity={entity} days={days} lunchIndex={lunchIndex} onEditCell={onEditCell} now={now} />
         ))}
       </div>
     </div>
   );
 }
 
-function Row({ i, label, entity, days, lunchIndex, onEditCell }) {
+function Row({ i, label, entity, days, lunchIndex, onEditCell, now }) {
+  const isNow = now?.current === i, isNext = !isNow && now?.next === i;
+  /* the cell in today's column on the running (or next) period */
+  const mark = d => (now?.today === d ? (isNow ? ' now-cell' : isNext ? ' next-cell' : '') : '');
   return (
     <>
-      <div className="tt-time">{label}</div>
+      <div className={`tt-time${isNow ? ' is-now' : isNext ? ' is-next' : ''}`}>
+        {label}
+        {isNow && <span className="now-tag">Now</span>}
+        {isNext && <span className="now-tag next">Next</span>}
+      </div>
       {days.map(d => {
         const v = entity.grid[d]?.[i] || '';
         const role = entity.roles ? entity.roles[d]?.[i] || '' : '';
@@ -53,7 +68,7 @@ function Row({ i, label, entity, days, lunchIndex, onEditCell }) {
           const shortVenue = abbreviateVenue(venue);
           return (
             <div
-              className={`cell occ ${role === 'support' ? 'support' : ''}`}
+              className={`cell occ ${role === 'support' ? 'support' : ''}${mark(d)}`}
               key={d}
               title={`${v} — ${role === 'support' ? 'Support' : 'Main'} mentor${venue ? ` @ ${venue}` : ''}`}
             >
@@ -79,24 +94,24 @@ function Row({ i, label, entity, days, lunchIndex, onEditCell }) {
         if (role === 'lunch') {
           return clickable
             ? (
-              <button type="button" className="cell lunch editable" key={d} onClick={handleClick} title="Logged lunch — click to change or clear">
+              <button type="button" className={`cell lunch editable${mark(d)}`} key={d} onClick={handleClick} title="Logged lunch — click to change or clear">
                 {v}
               </button>
             ) : (
-              <div className="cell lunch" key={d}>{v}</div>
+              <div className={`cell lunch${mark(d)}`} key={d}>{v}</div>
             );
         }
         if (role === 'other') {
           const shortLabel = abbreviateBatch(v);
           return clickable
             ? (
-              <button type="button" className="cell occ other editable" key={d} onClick={handleClick} title={`${v} — click to change or clear`}>
+              <button type="button" className={`cell occ other editable${mark(d)}`} key={d} onClick={handleClick} title={`${v} — click to change or clear`}>
                 <span className="name-full">{v}</span>
                 <span className="name-abbr">{shortLabel}</span>
                 <span className="rl">ASSIGNED</span>
               </button>
             ) : (
-              <div className="cell occ other" key={d} title={v}>
+              <div className={`cell occ other${mark(d)}`} key={d} title={v}>
                 <span className="name-full">{v}</span>
                 <span className="name-abbr">{shortLabel}</span>
                 <span className="rl">ASSIGNED</span>
@@ -106,7 +121,7 @@ function Row({ i, label, entity, days, lunchIndex, onEditCell }) {
         if (isClass(v)) {
           const shortBatch = abbreviateBatch(v);
           return (
-            <div className="cell occ" key={d} title={v}>
+            <div className={`cell occ${mark(d)}`} key={d} title={v}>
               <span className="name-full">{v}</span>
               <span className="name-abbr">{shortBatch}</span>
             </div>
@@ -114,12 +129,12 @@ function Row({ i, label, entity, days, lunchIndex, onEditCell }) {
         }
         if (isGlobalLunch) {
           return clickable
-            ? <button type="button" className="cell lunch editable" key={d} onClick={handleClick} title="Click to assign lunch or other work">Lunch</button>
-            : <div className="cell lunch" key={d}>Lunch</div>;
+            ? <button type="button" className={`cell lunch editable${mark(d)}`} key={d} onClick={handleClick} title="Click to assign lunch or other work">Lunch</button>
+            : <div className={`cell lunch${mark(d)}`} key={d}>Lunch</div>;
         }
         return clickable
-          ? <button type="button" className="cell free editable" key={d} onClick={handleClick} title="Click to assign lunch or other work">Free</button>
-          : <div className="cell free" key={d}>Free</div>;
+          ? <button type="button" className={`cell free editable${mark(d)}`} key={d} onClick={handleClick} title="Click to assign lunch or other work">Free</button>
+          : <div className={`cell free${mark(d)}`} key={d}>Free</div>;
       })}
     </>
   );

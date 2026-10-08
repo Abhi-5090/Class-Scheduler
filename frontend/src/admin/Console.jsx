@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Wordmark from '../components/Wordmark.jsx';
 import ThemeButton from '../components/ThemeButton.jsx';
+import { Spinner } from './ui.jsx';
 import { useAdmin } from '../lib/useAdmin.js';
 import { api } from '../lib/api.js';
 
@@ -79,7 +80,7 @@ export default function Console() {
 
       <main className="main">
         <div className="console-bar"><ThemeButton surface /></div>
-        <Outlet />
+        <Suspense fallback={<Spinner />}><Outlet /></Suspense>
       </main>
     </div>
   );

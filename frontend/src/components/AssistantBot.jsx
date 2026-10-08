@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
-import { answerScheduleQuery } from '../lib/assistantEngine.js';
 import '../styles/assistant.css';
 
 const INITIAL_MESSAGE = {
@@ -10,10 +9,12 @@ const INITIAL_MESSAGE = {
   time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
 };
 
+/* month suggestions follow the calendar rather than a fixed term */
+const monthName = k => new Date(new Date().getFullYear(), new Date().getMonth() + k, 1).toLocaleDateString('en-US', { month: 'long' });
 const SUGGESTIONS = [
   "📅 Today's schedule",
-  "🗓️ September schedule",
-  "🗓️ October schedule",
+  `🗓️ ${monthName(0)} schedule`,
+  `🗓️ ${monthName(1)} schedule`,
   "👨‍🏫 Who are the trainers?",
   "🏢 Which halls are free?",
   "🍱 Lunch break timing",
@@ -31,15 +32,18 @@ export default function AssistantBot() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Fetch live schedule data on mount and keep updated
-  useEffect(() => {
-    let mounted = true;
-    api.schedule()
-      .then(data => { if (mounted) setScheduleData(data); })
-      .catch(err => console.warn('Assistant: Failed to fetch live schedule', err));
+  /* The answering engine is a large module most visitors never need, so it is
+     fetched the first time the chat opens (or a question is sent) and reused. */
+  const engine = useRef(null);
+  const loadEngine = () => (engine.current ??= import('../lib/assistantEngine.js'));
 
-    return () => { mounted = false; };
-  }, []);
+  /* Escape closes the chat from anywhere while it is open */
+  useEffect(() => {
+    if (!open) return undefined;
+    const esc = e => { if (e.key === 'Escape') setOpen(false); };
+    addEventListener('keydown', esc);
+    return () => removeEventListener('keydown', esc);
+  }, [open]);
 
   // Auto-scroll to bottom when messages update
   useEffect(() => {
@@ -55,9 +59,10 @@ export default function AssistantBot() {
     }
   }, [open]);
 
-  // Refresh schedule data when chat opens
+  // Load the engine and refresh schedule data when the chat opens
   const handleOpen = () => {
     setOpen(true);
+    loadEngine();
     api.schedule()
       .then(data => setScheduleData(data))
       .catch(() => {});
@@ -90,6 +95,7 @@ export default function AssistantBot() {
     }
 
     // Process answer with natural realistic typing delay (300-600ms)
+    const { answerScheduleQuery } = await loadEngine();
     setTimeout(() => {
       const botResponseText = answerScheduleQuery(text, currentData);
       const botMsg = {
@@ -146,7 +152,7 @@ export default function AssistantBot() {
     <>
       {/* ── Floating Launcher ── */}
       <div className="asst-launcher-wrap">
-        <div className="asst-tooltip">
+        <div className="asst-tooltip" aria-hidden="true">
           <span>How can I help you?</span>
           <span style={{ fontSize: '14px' }}>👋</span>
         </div>
@@ -155,7 +161,9 @@ export default function AssistantBot() {
           type="button"
           className="asst-btn"
           onClick={() => (open ? setOpen(false) : handleOpen())}
-          aria-label="Open Schedule Assistant"
+          aria-label={open ? 'Close Schedule Assistant' : 'Open Schedule Assistant'}
+          aria-expanded={open}
+          aria-controls="asst-window"
           title="Chat with the Schedule Assistant"
         >
           <span className="asst-pulse-ring" />
@@ -170,7 +178,7 @@ export default function AssistantBot() {
 
       {/* ── Chat Window ── */}
       {open && (
-        <div className="asst-window" role="dialog" aria-label="Schedule Assistant chat window">
+        <div className="asst-window" id="asst-window" role="dialog" aria-label="Schedule Assistant chat window">
           {/* Header */}
           <div className="asst-header">
             <div className="asst-header-left">
@@ -219,7 +227,7 @@ export default function AssistantBot() {
           </div>
 
           {/* Messages Stream */}
-          <div className="asst-messages">
+          <div className="asst-messages" aria-live="polite" aria-relevant="additions">
             {messages.map(msg => (
               <div key={msg.id} className={`asst-msg ${msg.sender}`}>
                 <div className="asst-msg-bubble">
@@ -267,6 +275,8 @@ export default function AssistantBot() {
               ref={inputRef}
               className="asst-input"
               type="text"
+              aria-label="Ask the Schedule Assistant"
+              maxLength={300}
               placeholder="Ask about trainers, batches, halls..."
               value={input}
               onChange={e => setInput(e.target.value)}

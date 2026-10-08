@@ -555,3 +555,11 @@
     border-radius: 20px;
   }
 }
+
+/* phones: a smaller launcher, no hover tooltip, and a full-width chat sheet */
+@media(max-width:640px){
+  .asst-launcher-wrap{right:12px; bottom:12px}
+  .asst-btn{width:50px; height:50px}
+  .asst-tooltip{display:none}
+  .asst-window{right:8px; left:8px; width:auto; bottom:72px; max-height:calc(100vh - 96px)}
+}

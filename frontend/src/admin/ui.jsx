@@ -1,16 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useFeedback } from '../lib/feedback.jsx';
+import { useFocusTrap } from '../lib/focus.js';
 
 /* ── modal ─────────────────────────────────────────────────────────────── */
 /*
  * `dirty` marks unsaved edits: a stray Escape or backdrop click then asks
  * before throwing them away, and leaving or reloading the page warns too.
  * The explicit Cancel button is the caller's own and closes straight away.
+ * Focus is trapped inside while it is open and handed back on close.
  */
 export function Modal({ title, sub, children, onClose, footer, wide, dirty = false }) {
-  const dismiss = useCallback(() => {
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return;
+  const { confirm } = useFeedback();
+  const box = useRef(null);
+  const titleId = useId();
+  useFocusTrap(box);
+
+  const dismiss = useCallback(async () => {
+    if (dirty && !(await confirm({
+      title: 'Discard unsaved changes?',
+      body: 'You have edits in this form that have not been saved. Closing now will lose them.',
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Keep editing',
+      danger: true,
+    }))) return;
     onClose();
-  }, [dirty, onClose]);
+  }, [dirty, onClose, confirm]);
 
   useEffect(() => {
     const esc = e => {
@@ -33,8 +47,8 @@ export function Modal({ title, sub, children, onClose, footer, wide, dirty = fal
 
   return (
     <div className="modal-back" onMouseDown={e => { if (e.target === e.currentTarget) dismiss(); }}>
-      <div className="modal" style={wide ? { maxWidth: 980 } : undefined} role="dialog" aria-modal="true">
-        <h2>{title}</h2>
+      <div className={`modal ${wide ? 'wide' : ''}`} ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <h2 id={titleId}>{title}</h2>
         {sub && <p className="sub">{sub}</p>}
         {children}
         {footer && <div className="modal-foot">{footer}</div>}
@@ -83,26 +97,54 @@ export function Spinner() {
   return <div style={{ display: 'grid', placeItems: 'center', padding: '54px 0' }}><div className="ldr" /></div>;
 }
 
-/*
- * One collection's worth of state: the rows, a load/refresh, and mutations
- * that surface the server's own message rather than a generic failure.
- */
-export function useCollection(kind) {
-  const [rows, setRows] = useState(null);
-  const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
 
-  const load = useCallback(async (apiRef) => {
-    try { setRows(await apiRef.list(kind)); }
-    catch (e) { setError(e.message); setRows([]); }
-  }, [kind]);
+/* ── table search + sort ───────────────────────────────────────────────
+ * const t = useTable(rows, { text: r => `${r.name} ${r.dept}`, sorts: { name: r => r.name, … }, initial: 'name' });
+ * t.rows is filtered by t.query and ordered by t.sort ({ key, dir }); t.toggle(key) flips
+ * a column between ascending and descending. Text compares case-insensitively and
+ * numbers numerically, with blanks always last. */
+export function useTable(rows, { text, sorts, initial, initialDir = 'asc' }) {
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState({ key: initial, dir: initialDir });
 
-  const flash = msg => { setOk(msg); setError(''); setTimeout(() => setOk(''), 2600); };
+  const view = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = (rows || []).filter(r => !q || text(r).toLowerCase().includes(q));
+    const get = sorts[sort.key];
+    if (!get) return list;
+    const dir = sort.dir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const x = get(a), y = get(b);
+      const blankX = x === '' || x === null || x === undefined, blankY = y === '' || y === null || y === undefined;
+      if (blankX || blankY) return blankX === blankY ? 0 : blankX ? 1 : -1;
+      if (typeof x === 'number' && typeof y === 'number') return (x - y) * dir;
+      return String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' }) * dir;
+    });
+  }, [rows, query, sort, text, sorts]);
 
-  return { rows, setRows, error, setError, ok, setOk, flash, load };
+  const toggle = key => setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  return { rows: view, query, setQuery, sort, toggle };
 }
 
-/* Reads better at a call site than a bare window.confirm. */
-export function confirmDelete(what) {
-  return window.confirm(`Delete ${what}?\n\nThis cannot be undone.`);
+/* A column header that sorts its column; announces the order to screen readers. */
+export function SortTh({ label, k, table, className, style }) {
+  const on = table.sort.key === k;
+  return (
+    <th className={className} style={style} aria-sort={on ? (table.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className={`th-sort ${on ? 'on' : ''}`} onClick={() => table.toggle(k)}>
+        {label}<span className="th-arrow" aria-hidden="true">{on ? (table.sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </button>
+    </th>
+  );
+}
+
+export function SearchBox({ value, onChange, label, placeholder }) {
+  return (
+    <div className="search admin-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+      </svg>
+      <input type="search" aria-label={label} placeholder={placeholder} value={value} maxLength={80} onChange={e => onChange(e.target.value)} />
+    </div>
+  );
 }

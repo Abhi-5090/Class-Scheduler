@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { reveal } from '../lib/reveal.js';
-import { exportDayPDF } from '../lib/pdfExport.js';
+import { useFeedback } from '../lib/feedback.jsx';
+import { exportDayPDF } from '../lib/pdf.js';
 import { PinIcon, ClockIcon, GridIcon, TimelineIcon, DownloadIcon, SearchIcon } from './Icons.jsx';
 import { formatDayShort } from '../lib/abbreviate.js';
 
-export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQueryChange }) {
+export default function DayWiseView({ data, selectedDay, onSelectDay, query, now }) {
+  const { toast } = useFeedback();
   const host = useRef(null);
   const [mode, setMode] = useState('timeline'); // 'timeline' (primary) | 'batch'
 
@@ -119,8 +121,16 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQ
     });
   }, [data, activeDay, q]);
 
-  const handleExport = () => {
-    exportDayPDF(data, activeDay);
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportDayPDF(data, activeDay);
+      toast(` schedule downloaded`);
+    } catch {
+      toast('Could not create the PDF — please try again', 'error');
+    } finally { setExporting(false); }
   };
 
   return (
@@ -135,12 +145,14 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQ
               <button
                 key={d}
                 type="button"
-                className={`day-chip ${isSelected ? 'on' : ''}`}
+                className={`day-chip ${isSelected ? 'on' : ''} ${now?.today === d ? 'is-today' : ''}`}
+                aria-pressed={isSelected}
                 onClick={() => onSelectDay(d)}
                 title={`${d} schedule (${info.totalSessions} sessions)`}
               >
                 <span className="day-name">
                   <span className="day-full">{d}</span>
+                  {now?.today === d && <span className="today-tag">Today</span>}
                   <span className="day-abbr">{formatDayShort(d)}</span>
                 </span>
                 <span className="day-badge">
@@ -158,6 +170,7 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQ
             <button
               type="button"
               className={`mode-btn ${mode === 'timeline' ? 'on' : ''}`}
+              aria-pressed={mode === 'timeline'}
               onClick={() => setMode('timeline')}
               title="View as Period-by-Period Timeline"
             >
@@ -167,6 +180,7 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQ
             <button
               type="button"
               className={`mode-btn ${mode === 'batch' ? 'on' : ''}`}
+              aria-pressed={mode === 'batch'}
               onClick={() => setMode('batch')}
               title="Group by Year & Batch"
             >
@@ -180,10 +194,11 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQ
             type="button"
             className="day-export-btn"
             onClick={handleExport}
+            disabled={exporting}
             title={`Download ${activeDay} schedule as PDF`}
           >
             <DownloadIcon />
-            <span>Export PDF</span>
+            <span>{exporting ? 'Generating…' : 'Export PDF'}</span>
           </button>
         </div>
       </div>
@@ -209,20 +224,28 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, onQ
       </div>
 
       {/* Main Content Area: Timeline mode (primary) or Batch mode */}
-      {mode === 'timeline' ? (
+      {mode === 'timeline' && q && !timelineSlots.some(s => s.sessions.length) ? (
+        <p className="empty">No classes match “{query.trim()}” on {activeDay}.</p>
+      ) : mode === 'timeline' ? (
         <div className="daywise-timeline-mode">
           <div className="timeline-stream">
             {timelineSlots.map((slot) => {
               const hasClasses = slot.sessions.length > 0;
               const isGlobalLunch = slot.isLunch && !hasClasses;
+              const onToday = now?.today === activeDay;
+              const isNow = onToday && now.current === slot.slotIdx;
+              const isNext = onToday && !isNow && now.next === slot.slotIdx;
 
               return (
                 <div
                   key={slot.slotIdx}
-                  className={`timeline-slot-row rv ${slot.isLunch ? 'is-lunch' : ''} ${hasClasses ? 'has-classes' : 'is-empty'}`}
+                  className={`timeline-slot-row rv ${slot.isLunch ? 'is-lunch' : ''} ${hasClasses ? 'has-classes' : 'is-empty'} ${isNow ? 'is-now' : ''} ${isNext ? 'is-next' : ''}`}
+                  aria-current={isNow ? 'time' : undefined}
                 >
                   <div className="slot-timeline-header">
                     <div className="slot-pill">Slot {slot.slotIdx + 1}</div>
+                    {isNow && <span className="now-tag">Now</span>}
+                    {isNext && <span className="now-tag next">Next</span>}
                     <div className="slot-time-text">{slot.slotLabel}</div>
                     {hasClasses && (
                       <span className="slot-cnt-badge">

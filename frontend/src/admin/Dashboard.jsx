@@ -20,8 +20,13 @@ export default function Dashboard() {
 
   const students = calculateUniqueStudents(data.batches);
   const sessions = data.batches.reduce((s, b) => s + b.rows.length, 0);
-  const unassigned = data.batches.filter(b => b.rows.some(r => !r.mainList.length));
-  const noVenue = data.batches.filter(b => b.rows.some(r => !r.venue));
+  /* a finished batch needs nothing more; current and upcoming ones do */
+  const live = data.batches.filter(b => b.status !== 'ended');
+  const unassigned = live.filter(b => b.rows.some(r => !r.mainList.length));
+  const noVenue = live.filter(b => b.rows.some(r => !r.venue));
+  /* clashes name batches; the editor opens by id */
+  const idOf = Object.fromEntries(data.batches.map(b => [b.name, b.id]));
+  const editLink = name => `/admin/batches?edit=${encodeURIComponent(idOf[name] || '')}`;
 
   return (
     <>
@@ -32,7 +37,7 @@ export default function Dashboard() {
 
       <div className="mini-stats">
         {[
-          [data.batches.length, 'Batches'],
+          [live.length, 'Current & upcoming batches'],
           [sessions, 'Weekly sessions'],
           [data.trainers.length, 'Trainers'],
           [data.venues.length, 'Training halls'],
@@ -50,7 +55,9 @@ export default function Dashboard() {
             {data.conflicts.map((c, i) => (
               <li key={i}>
                 {c.kind === 'trainer' ? <b>{c.subject}</b> : <b>{c.subject}</b>}
-                {c.kind === 'trainer' ? ' is booked twice' : ' is double-booked'} on {c.day} at {c.slot} — {c.batches.join(' and ')}
+                {c.kind === 'trainer' ? ' is booked twice' : ' is double-booked'} on {c.day} at {c.slot} — {c.batches.map((name, k) => (
+                  <span key={name}>{k ? ' and ' : ''}<Link to={editLink(name)} className="clash-link">{name}</Link></span>
+                ))}
               </li>
             ))}
           </ul>
@@ -67,9 +74,9 @@ export default function Dashboard() {
           </EmptyState>
         ) : (
           <div className="tbl-wrap">
-            <table className="tbl">
+            <table className="tbl stack">
               <thead>
-                <tr><th>Batch</th><th>Year</th><th>Missing</th><th className="act">—</th></tr>
+                <tr><th>Batch</th><th>Year</th><th>Missing</th><th className="act"><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {[...new Set([...unassigned, ...noVenue])].map(b => {
@@ -78,11 +85,11 @@ export default function Dashboard() {
                   if (b.rows.some(r => !r.venue)) gaps.push('training hall');
                   return (
                     <tr key={b.id}>
-                      <td className="nm">{b.name}</td>
-                      <td className="muted">{b.group}</td>
-                      <td>{gaps.map(g => <span className="pill-tag warn" key={g} style={{ marginRight: 6 }}>{g}</span>)}</td>
+                      <td className="nm" data-label="Batch">{b.name}</td>
+                      <td className="muted" data-label="Year">{b.group}</td>
+                      <td data-label="Missing">{gaps.map(g => <span className="pill-tag warn" key={g} style={{ marginRight: 6 }}>{g}</span>)}</td>
                       <td className="act">
-                        <Link className="btn btn-ghost btn-sm" to="/admin/batches">Open</Link>
+                        <Link className="btn btn-ghost btn-sm" to={`/admin/batches?edit=${encodeURIComponent(b.id)}`} aria-label={`Open ${b.name} to fix it`}>Fix</Link>
                       </td>
                     </tr>
                   );

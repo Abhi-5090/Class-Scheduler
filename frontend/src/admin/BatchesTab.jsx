@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { announceChange } from './Console.jsx';
-import { Modal, PageHead, Field, Notice, EmptyState, Spinner, confirmDelete } from './ui.jsx';
+import { Modal, PageHead, Field, Notice, EmptyState, Spinner, useTable, SortTh, SearchBox } from './ui.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
 import SessionEditor, { blankSession } from './SessionEditor.jsx';
 
-import { exportBatchesPDF } from '../lib/pdfExport.js';
+import { exportBatchesPDF } from '../lib/pdf.js';
 import { formatDateRange } from '../lib/calendarUtils.js';
 
 /* Quick date ranges relative to today: this month, next month, and both. */
@@ -27,6 +29,8 @@ const emptyBatch = groups => ({
 });
 
 export default function BatchesTab() {
+  const { toast, confirm } = useFeedback();
+  const [params, setParams] = useSearchParams();
   const [batches, setBatches] = useState(null);
   const [groups, setGroups] = useState([]);
   const [trainers, setTrainers] = useState([]);
@@ -49,19 +53,32 @@ export default function BatchesTab() {
     setSnapshot(JSON.stringify(d));
   };
   const dirty = !!editing && JSON.stringify(editing) !== snapshot;
+
+  /* "Duplicate" starts a new batch from an existing one: same year, dates and
+     session times, but no mentors or halls — the original already holds those
+     at exactly these times, so a straight copy could never be saved. */
+  const duplicate = b => {
+    const { _id, createdAt, updatedAt, __v, order, ...rest } = structuredClone(b);
+    open({
+      ...rest,
+      name: `${b.name} (copy)`,
+      sessions: (rest.sessions || []).map(({ _id: sid, ...s }) => ({ ...s, mainTrainers: [], supportTrainers: [], venue: '' })),
+    });
+    toast('Copy ready — mentors and halls were cleared because the original uses them at these times.', 'success', 6000);
+  };
   const [arrangingGroup, setArrangingGroup] = useState(null); // active year group name in arrange modal or null
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [filter, setFilter] = useState('All');
 
   const handleExportPDF = async () => {
-    setExporting(true); setError('');
+    setExporting(true);
     try {
       const schedule = await api.schedule();
-      exportBatchesPDF(schedule);
+      await exportBatchesPDF(schedule);
       flash('Batches schedule PDF downloaded');
     } catch (e) {
-      setError(e.message);
+      toast(e.message, 'error');
     } finally {
       setExporting(false);
     }
@@ -78,7 +95,8 @@ export default function BatchesTab() {
   };
   useEffect(() => { reload(); }, []);
 
-  const flash = msg => { setOk(msg); setError(''); setTimeout(() => setOk(''), 2600); };
+  /* success lands as a toast, so it is seen however far down the page you are */
+  const flash = msg => { setError(''); toast(msg); };
 
   const sortedBatches = useMemo(() => {
     if (!batches) return [];
@@ -95,6 +113,32 @@ export default function BatchesTab() {
     () => sortedBatches.filter(b => filter === 'All' || b.group === filter),
     [sortedBatches, filter],
   );
+
+  const table = useTable(shown, {
+    text: b => [b.name, b.dept, b.group, ...(b.sessions || []).flatMap(s => [s.subject, s.venue, ...(s.mainTrainers || []), ...(s.supportTrainers || [])])].join(' '),
+    sorts: {
+      order: b => sortedBatches.indexOf(b),
+      name: b => b.name,
+      group: b => sortedBatches.indexOf(b),
+      period: b => b.startDate || '',
+      sessions: b => (b.sessions || []).length,
+      students: b => Number(b.count) || 0,
+    },
+    initial: 'order',
+  });
+  /* the arrows reorder the board, so they only make sense in board order */
+  const canReorder = table.sort.key === 'order' && table.sort.dir === 'asc' && !table.query.trim();
+
+  /* /admin/batches?edit=<id> opens that batch straight away — the dashboard's
+     clash and "needs attention" links land here */
+  useEffect(() => {
+    const id = params.get('edit');
+    if (!id || !batches) return;
+    const b = batches.find(x => x._id === id);
+    if (b) open(structuredClone(b));
+    else toast('That batch no longer exists', 'error');
+    setParams({}, { replace: true });
+  }, [batches, params]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save() {
     const draft = editing;
@@ -125,13 +169,26 @@ export default function BatchesTab() {
   }
 
   async function remove(b) {
-    if (!confirmDelete(`the batch "${b.name}" and its ${(b.sessions || []).length} session(s)`)) return;
+    const n = (b.sessions || []).length;
+    const sure = await confirm({
+      title: `Delete "${b.name}"?`,
+      body: (
+        <>
+          <p>This removes the batch and its <b>{n} weekly session{n === 1 ? '' : 's'}</b> from the board,
+            the monthly calendar, and every trainer and hall timetable.</p>
+          <p className="muted">This cannot be undone.</p>
+        </>
+      ),
+      confirmLabel: 'Delete batch',
+      danger: true,
+    });
+    if (!sure) return;
     try {
       await api.remove('batches', b._id);
       await reload();
       announceChange();
       flash(`Deleted ${b.name}`);
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   /* Moves a batch up/down within its own Year Group to determine its position in Overall Schedule */
@@ -152,7 +209,7 @@ export default function BatchesTab() {
       await reload();
       announceChange();
       flash(`Updated order for ${b.group}`);
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   /* Moves a batch to the extreme top or bottom of its group */
@@ -175,7 +232,7 @@ export default function BatchesTab() {
       await reload();
       announceChange();
       flash(`Moved "${target.name}" to ${toTop ? 'top' : 'bottom'}`);
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   if (loadError && (!batches || !config)) {
@@ -257,6 +314,8 @@ export default function BatchesTab() {
             </select>
           </Field>
 
+          <SearchBox value={table.query} onChange={table.setQuery} label="Search batches by name, subject, trainer or hall" placeholder="Search batch, subject, trainer, hall…" />
+
           {groups.length > 0 && batches.length > 0 && (
             <button
               type="button"
@@ -278,23 +337,27 @@ export default function BatchesTab() {
           >
             {batches.length ? 'Pick another year, or add a batch here.' : 'Add your first batch to start building the board.'}
           </EmptyState>
+        ) : !table.rows.length ? (
+          <EmptyState title="No batches match">Nothing matches “{table.query.trim()}”. Try a batch name, subject, trainer or hall.</EmptyState>
         ) : (
           <div className="tbl-wrap">
-            <table className="tbl">
+            {!canReorder && <p className="tbl-note">Sorted or filtered — clear the search and sort by Order to move batches up and down.</p>}
+            <table className="tbl stack">
+              <caption className="sr-only">Batches and their weekly sessions</caption>
               <thead>
                 <tr>
-                  <th style={{ width: 95 }}>Order</th>
-                  <th>Batch</th>
-                  <th>Year</th>
-                  <th>Tentative Period</th>
-                  <th>Sessions</th>
+                  <SortTh label="Order" k="order" table={table} style={{ width: 110 }} />
+                  <SortTh label="Batch" k="name" table={table} />
+                  <SortTh label="Year" k="group" table={table} />
+                  <SortTh label="Tentative Period" k="period" table={table} />
+                  <SortTh label="Sessions" k="sessions" table={table} />
                   <th>Halls</th>
-                  <th>Students</th>
+                  <SortTh label="Students" k="students" table={table} />
                   <th className="act">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {shown.map(b => {
+                {table.rows.map(b => {
                   const groupBatches = sortedBatches.filter(x => x.group === b.group);
                   const groupIndex = groupBatches.findIndex(x => x._id === b._id);
                   const sess = b.sessions || [];
@@ -303,7 +366,7 @@ export default function BatchesTab() {
                   const halls = [...new Set(sess.map(s => s.venue).filter(Boolean))];
                   return (
                     <tr key={b._id}>
-                      <td>
+                      <td data-label="Order">
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <span className="pill-tag" style={{ minWidth: 26, textAlign: 'center', padding: '2px 6px', fontSize: 11, fontWeight: 700 }}>
                             #{groupIndex + 1}
@@ -311,31 +374,31 @@ export default function BatchesTab() {
                           <button
                             className="btn btn-ghost btn-sm"
                             style={{ padding: '4px 6px', minHeight: 26, minWidth: 24, lineHeight: 1 }}
-                            disabled={groupIndex === 0}
+                            disabled={!canReorder || groupIndex === 0}
                             onClick={() => moveWithinGroup(b, -1)}
                             title="Move up in Overall Schedule"
-                            aria-label="Move up"
+                            aria-label={`Move ${b.name} up`}
                           >
                             ↑
                           </button>
                           <button
                             className="btn btn-ghost btn-sm"
                             style={{ padding: '4px 6px', minHeight: 26, minWidth: 24, lineHeight: 1 }}
-                            disabled={groupIndex === groupBatches.length - 1}
+                            disabled={!canReorder || groupIndex === groupBatches.length - 1}
                             onClick={() => moveWithinGroup(b, 1)}
                             title="Move down in Overall Schedule"
-                            aria-label="Move down"
+                            aria-label={`Move ${b.name} down`}
                           >
                             ↓
                           </button>
                         </div>
                       </td>
-                      <td className="nm">
+                      <td className="nm" data-label="Batch">
                         {b.name}
                         {b.dept && <div className="muted" style={{ fontWeight: 400, fontSize: 12, marginTop: 3 }}>{b.dept}</div>}
                       </td>
-                      <td className="muted">{b.group}</td>
-                      <td>
+                      <td className="muted" data-label="Year">{b.group}</td>
+                      <td data-label="Period">
                         {(b.startDate || b.endDate) ? (
                           <span className="tag-period" title={`From ${b.startDate || 'start'} to ${b.endDate || 'end'}`}>
                             📅 {formatDateRange(b.startDate, b.endDate)}
@@ -344,18 +407,19 @@ export default function BatchesTab() {
                           <span className="muted" style={{ fontSize: 12 }}>Continuous</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Sessions">
                         <span className="mono">{sess.length}</span>
                         {!!unstaffed && <span className="pill-tag warn" style={{ marginLeft: 8 }}>{unstaffed} unstaffed</span>}
                       </td>
-                      <td className="muted" style={{ fontSize: 12.5 }}>
+                      <td className="muted" style={{ fontSize: 12.5 }} data-label="Halls">
                         {halls.length ? halls.join(', ') : <span className="pill-tag warn">not set</span>}
                         {!!noHall && !!halls.length && <span className="pill-tag warn" style={{ marginLeft: 6 }}>{noHall} missing</span>}
                       </td>
-                      <td className="mono">{b.count || '—'}</td>
+                      <td className="mono" data-label="Students">{b.count || '—'}</td>
                       <td className="act">
-                        <button className="btn btn-ghost btn-sm" onClick={() => open(structuredClone(b))}>Edit</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => remove(b)}>Delete</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => open(structuredClone(b))} aria-label={`Edit ${b.name}`}>Edit</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => duplicate(b)} aria-label={`Duplicate ${b.name}`}>Duplicate</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => remove(b)} aria-label={`Delete ${b.name}`}>Delete</button>
                       </td>
                     </tr>
                   );

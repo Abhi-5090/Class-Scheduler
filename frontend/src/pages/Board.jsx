@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
-import { RM } from '../lib/theme.js';
 import { reveal } from '../lib/reveal.js';
 
 import Hero from '../components/Hero.jsx';
 import Stats from '../components/Stats.jsx';
 import Loading from '../components/Loading.jsx';
+import NowBar from '../components/NowBar.jsx';
+import { periodAt, useNow } from '../lib/now.js';
 import BatchCard from '../components/BatchCard.jsx';
 import SoonCard from '../components/SoonCard.jsx';
 import PeriodGrid, { Counts, freeAllDay, dayShort } from '../components/PeriodGrid.jsx';
@@ -14,9 +15,6 @@ import DayWiseView from '../components/DayWiseView.jsx';
 import CalendarView from '../components/CalendarView.jsx';
 import { CalendarIcon, CalendarDayIcon, CalendarMonthIcon, PersonIcon, BuildingIcon, SearchIcon } from '../components/Icons.jsx';
 import { formatDayShort } from '../lib/abbreviate.js';
-
-/* loading dwell, ms — the same beats the original board used */
-const D_VIEW = 900, D_FILTER = 620, D_SEARCH = 460;
 
 const VIEWS = {
   schedule: { msg: 'Loading class schedule', n: 3, label: 'Overall Schedule', shortLabel: 'Overall', Icon: CalendarIcon },
@@ -44,17 +42,18 @@ export default function Board({ admin }) {
   };
   const [dayFilter, setDayFilter] = useState('All');
   const [dayWiseDay, setDayWiseDay] = useState('Monday');
-  const [query, setQuery] = useState('');
+  /* each view keeps its own search, so switching tabs never filters the other */
+  const [dayQuery, setDayQuery] = useState('');
+  const [trainerQuery, setTrainerQuery] = useState('');
   const [trainerTrackFilter, setTrainerTrackFilter] = useState('teaching'); // 'teaching' | 'non-teaching'
 
-  /* `dwell` holds the skeleton up for a beat after every change, the way the
-     original did — the board is meant to feel like it is fetching. */
-  const [dwell, setDwell] = useState(true);
-  const [dwellMsg, setDwellMsg] = useState(VIEWS.schedule.msg);
+  /* the live clock behind the Now / Next highlight; ticks every 30s */
+  const clock = useNow();
 
   const refresh = () => api.schedule().then(setData);
   useEffect(() => { refresh().catch(e => setError(e.message)); }, []);
 
+  /* Day-wise opens on today when today is a teaching day */
   useEffect(() => {
     if (data?.days?.length) {
       const today = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date());
@@ -64,51 +63,13 @@ export default function Board({ admin }) {
         setDayWiseDay(data.days[0]);
       }
     }
-  }, [data]);
+  }, [data]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { document.body.classList.add('boot'); }, []);
 
   /* The console and the login screen retitle the tab, so the board has to
      claim it back when you navigate here from either of them. */
   useEffect(() => { document.title = 'Class Scheduler · NCET Training Schedule'; }, []);
-
-  const hold = (msg, ms) => {
-    setDwellMsg(msg);
-    setDwell(true);
-    if (RM) { setDwell(false); return () => {}; }
-    const t = setTimeout(() => setDwell(false), ms);
-    return () => clearTimeout(t);
-  };
-
-  /* view switch */
-  useEffect(() => hold(VIEWS[view].msg, D_VIEW), [view]);
-
-  /* day filter, schedule view only */
-  const firstFilter = useRef(true);
-  useEffect(() => {
-    if (firstFilter.current) { firstFilter.current = false; return; }
-    return hold(dayFilter === 'All' ? 'Loading all days' : `Loading ${dayFilter}`, D_FILTER);
-  }, [dayFilter]);
-
-  /* trainer track filter */
-  const firstTrack = useRef(true);
-  useEffect(() => {
-    if (firstTrack.current) { firstTrack.current = false; return; }
-    const label = trainerTrackFilter === 'teaching'
-      ? 'teaching trainers'
-      : 'non-teaching trainers';
-    return hold(`Loading ${label}`, D_FILTER);
-  }, [trainerTrackFilter]);
-
-  /* trainer search, debounced then held */
-  const firstQuery = useRef(true);
-  useEffect(() => {
-    if (firstQuery.current) { firstQuery.current = false; return; }
-    const debounce = setTimeout(() => {
-      hold(query.trim() ? `Searching “${query.trim()}”` : 'Loading trainers', D_SEARCH);
-    }, 240);
-    return () => clearTimeout(debounce);
-  }, [query]);
 
   if (error) {
     return (
@@ -128,10 +89,14 @@ export default function Board({ admin }) {
     );
   }
 
-  const busy = dwell;
+  const now = periodAt(data.slots, data.days, clock);
+  const isNonTeaching = t => t.track === 'non-teaching' || t.track === 'non-technical';
+  const teachingCount = data.trainers.filter(t => !isNonTeaching(t)).length;
+  const nonTeachingCount = data.trainers.length - teachingCount;
 
   return (
     <div className="wrap">
+      <a className="skip-link" href="#board-main">Skip to schedule</a>
       <Hero admin={admin} />
       <Stats data={data} />
 
@@ -139,17 +104,19 @@ export default function Board({ admin }) {
         <Segmented view={view} onChange={setView} />
         <div id="ctrlRight">
           {view === 'schedule' && (
-            <div className="filters">
+            <div className="filters" role="group" aria-label="Highlight a day">
               {['All', ...data.days].map(d => (
                 <button
                   key={d}
-                  className={`chip ${d === dayFilter ? 'on' : ''} ${busy ? 'busy' : ''}`}
+                  type="button"
+                  className={`chip ${d === dayFilter ? 'on' : ''}`}
+                  aria-pressed={d === dayFilter}
                   onClick={() => setDayFilter(d)}
                 >
                   {d === 'All' ? 'All days' : (
                     <>
                       <span className="day-full">{d}</span>
-                      <span className="day-abbr">{formatDayShort(d)}</span>
+                      <span className="day-abbr" aria-hidden="true">{formatDayShort(d)}</span>
                     </>
                   )}
                 </button>
@@ -160,9 +127,12 @@ export default function Board({ admin }) {
             <div className="search">
               <SearchIcon />
               <input
+                type="search"
+                aria-label="Search the day's classes by batch, subject, trainer or hall"
                 placeholder="Search batch, subject, trainer…"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
+                value={dayQuery}
+                maxLength={80}
+                onChange={e => setDayQuery(e.target.value)}
               />
             </div>
           )}
@@ -171,27 +141,30 @@ export default function Board({ admin }) {
               <div className="search">
                 <SearchIcon />
                 <input
+                  type="search"
+                  aria-label="Search trainers by name"
                   placeholder="Search trainer…"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
+                  value={trainerQuery}
+                  maxLength={80}
+                  onChange={e => setTrainerQuery(e.target.value)}
                 />
               </div>
               <div className="track-toggle" role="group" aria-label="Filter by Teaching or Non-Teaching track">
                 <button
                   type="button"
                   className={trainerTrackFilter === 'teaching' ? 'on' : ''}
+                  aria-pressed={trainerTrackFilter === 'teaching'}
                   onClick={() => setTrainerTrackFilter('teaching')}
-                  title="Show Teaching trainers"
                 >
-                  Teaching <span className="count-badge">({data.trainers.filter(t => (t.track || 'teaching') !== 'non-teaching' && t.track !== 'non-technical').length})</span>
+                  Teaching <span className="count-badge">({teachingCount})</span>
                 </button>
                 <button
                   type="button"
                   className={trainerTrackFilter === 'non-teaching' ? 'on non-teaching' : ''}
+                  aria-pressed={trainerTrackFilter === 'non-teaching'}
                   onClick={() => setTrainerTrackFilter('non-teaching')}
-                  title="Show Non-Teaching trainers"
                 >
-                  Non-Teaching <span className="count-badge">({data.trainers.filter(t => t.track === 'non-teaching' || t.track === 'non-technical').length})</span>
+                  Non-Teaching <span className="count-badge">({nonTeachingCount})</span>
                 </button>
               </div>
             </div>
@@ -199,80 +172,81 @@ export default function Board({ admin }) {
         </div>
       </div>
 
-      {view === 'schedule' && (
-        <section className="panel show">
-          <div className="sec-head">
-            <h2>Overall Class Schedule</h2>
-            <span className="hint">
-              {dayFilter === 'All' ? data.groups.map(g => g.group).join(', ') : `Highlighting ${dayFilter}`}
-            </span>
-          </div>
-          {busy ? <Loading msg={dwellMsg} n={3} />
-                : <ScheduleView data={data} dayFilter={dayFilter} />}
-        </section>
-      )}
+      <main id="board-main" tabIndex={-1}>
+        {['daywise', 'trainer', 'venue'].includes(view) && <NowBar now={now} data={data} />}
 
-      {view === 'daywise' && (
-        <section className="panel show">
-          <div className="sec-head">
-            <h2>Day-Wise Training Schedule</h2>
-            <span className="hint">
-              Detailed classes, faculty deployment, and training halls scheduled for {dayWiseDay}
-            </span>
-          </div>
-          {busy ? <Loading msg={dwellMsg} n={3} />
-                : <DayWiseView
-                    data={data}
-                    selectedDay={dayWiseDay}
-                    onSelectDay={setDayWiseDay}
-                    query={query}
-                    onQueryChange={setQuery}
-                    admin={admin}
-                  />}
-        </section>
-      )}
+        <section className="panel show" role="tabpanel" id={`panel-${view}`} aria-labelledby={`tab-${view}`}>
+          {view === 'schedule' && (
+            <>
+              <div className="sec-head">
+                <h2>Overall Class Schedule</h2>
+                <span className="hint">
+                  {dayFilter === 'All' ? data.groups.map(g => g.group).join(', ') : `Highlighting ${dayFilter}`}
+                </span>
+              </div>
+              <ScheduleView data={data} dayFilter={dayFilter} />
+            </>
+          )}
 
-      {view === 'calendar' && (
-        <section className="panel show">
-          <div className="sec-head">
-            <h2>Monthly Training Calendar</h2>
-            <span className="hint">
-              Comprehensive day-by-day training classes, tentative batch duration, and scheduled modules across months
-            </span>
-          </div>
-          {busy ? <Loading msg={dwellMsg} n={3} />
-                : <CalendarView data={data} admin={admin} />}
-        </section>
-      )}
+          {view === 'daywise' && (
+            <>
+              <div className="sec-head">
+                <h2>Day-Wise Training Schedule</h2>
+                <span className="hint">
+                  Detailed classes, faculty deployment, and training halls scheduled for {dayWiseDay}
+                </span>
+              </div>
+              <DayWiseView
+                data={data}
+                selectedDay={dayWiseDay}
+                onSelectDay={setDayWiseDay}
+                query={dayQuery}
+                now={now}
+                admin={admin}
+              />
+            </>
+          )}
 
-      {view === 'trainer' && (
-        <section className="panel show">
-          <div className="sec-head">
-            <h2>Trainer Schedule</h2>
-            <span className="hint">
-              {trainerTrackFilter === 'teaching'
-                ? `Showing Teaching mentors (${data.trainers.filter(t => (t.track || 'teaching') !== 'non-teaching' && t.track !== 'non-technical').length}) · `
-                : `Showing Non-Teaching mentors (${data.trainers.filter(t => t.track === 'non-teaching' || t.track === 'non-technical').length}) · `}
-              Free vs occupied periods per trainer · lunch ({data.slots[data.lunchIndex]}) is a break for all.
-            </span>
-          </div>
-          {busy ? <Loading msg={dwellMsg} n={2} />
-                : <TrainerView data={data} query={query} trackFilter={trainerTrackFilter} admin={admin} refresh={refresh} />}
-        </section>
-      )}
+          {view === 'calendar' && (
+            <>
+              <div className="sec-head">
+                <h2>Monthly Training Calendar</h2>
+                <span className="hint">
+                  Comprehensive day-by-day training classes, tentative batch duration, and scheduled modules across months
+                </span>
+              </div>
+              <CalendarView data={data} admin={admin} />
+            </>
+          )}
 
-      {view === 'venue' && (
-        <section className="panel show">
-          <div className="sec-head">
-            <h2>Venue Schedule</h2>
-            <span className="hint">
-              Which hall is free when, and what class is running there · lunch ({data.slots[data.lunchIndex]}) is a break for all.
-            </span>
-          </div>
-          {busy ? <Loading msg={dwellMsg} n={2} />
-                : <VenueView data={data} />}
+          {view === 'trainer' && (
+            <>
+              <div className="sec-head">
+                <h2>Trainer Schedule</h2>
+                <span className="hint">
+                  {trainerTrackFilter === 'teaching'
+                    ? `Showing Teaching mentors (${teachingCount}) · `
+                    : `Showing Non-Teaching mentors (${nonTeachingCount}) · `}
+                  Free vs occupied periods per trainer · lunch ({data.slots[data.lunchIndex]}) is a break for all.
+                </span>
+              </div>
+              <TrainerView data={data} query={trainerQuery} trackFilter={trainerTrackFilter} admin={admin} refresh={refresh} now={now} />
+            </>
+          )}
+
+          {view === 'venue' && (
+            <>
+              <div className="sec-head">
+                <h2>Venue Schedule</h2>
+                <span className="hint">
+                  Which hall is free when, and what class is running there · lunch ({data.slots[data.lunchIndex]}) is a break for all.
+                </span>
+              </div>
+              <VenueView data={data} now={now} />
+            </>
+          )}
         </section>
-      )}
+      </main>
 
       <footer>
         <span>
@@ -301,6 +275,20 @@ function Segmented({ view, onChange }) {
     }
   };
 
+  /* arrow keys move between tabs (and Home/End jump to the ends), the way a
+     tab list is expected to behave */
+  const keys = Object.keys(VIEWS);
+  const onKey = e => {
+    const i = keys.indexOf(view);
+    const to = e.key === 'ArrowRight' ? (i + 1) % keys.length
+      : e.key === 'ArrowLeft' ? (i - 1 + keys.length) % keys.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? keys.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    onChange(keys[to]);
+    requestAnimationFrame(() => segRef.current?.querySelector(`#tab-${keys[to]}`)?.focus());
+  };
+
   useLayoutEffect(position, [view]);
   useEffect(() => {
     addEventListener('resize', position);
@@ -311,18 +299,24 @@ function Segmented({ view, onChange }) {
   }, []);
 
   return (
-    <div className="seg" ref={segRef} data-view={view}>
-      <span className="pill" style={{ width: `${pill.width}px`, transform: `translateX(${pill.x}px)` }} />
+    <div className="seg" ref={segRef} data-view={view} role="tablist" aria-label="Schedule views" onKeyDown={onKey}>
+      <span className="pill" aria-hidden="true" style={{ width: `${pill.width}px`, transform: `translateX(${pill.x}px)` }} />
       {Object.entries(VIEWS).map(([key, { label, shortLabel, Icon }]) => (
         <button
           key={key}
+          type="button"
+          role="tab"
+          id={`tab-${key}`}
+          aria-selected={key === view}
+          aria-controls={`panel-${key}`}
+          tabIndex={key === view ? 0 : -1}
           className={key === view ? 'on' : ''}
           data-v={key}
           onClick={() => { if (key !== view) onChange(key); }}
         >
           <Icon />
           <span className="tab-full">{label}</span>
-          <span className="tab-abbr">{shortLabel || label}</span>
+          <span className="tab-abbr" aria-hidden="true">{shortLabel || label}</span>
         </button>
       ))}
     </div>
@@ -395,7 +389,7 @@ const classSlotsOf = (t, days) => Object.fromEntries(days.map(d => [d, Object.fr
   (t?.roles?.[d] || []).flatMap((r, i) => (r === 'main' || r === 'support' ? [[i, t.grid[d][i]]] : [])),
 )]));
 
-function TrainerView({ data, query, trackFilter = 'teaching', admin, refresh }) {
+function TrainerView({ data, query, trackFilter = 'teaching', admin, refresh, now }) {
   const host = useRef(null);
   const q = query.trim().toLowerCase();
   const list = useMemo(
@@ -450,7 +444,7 @@ function TrainerView({ data, query, trackFilter = 'teaching', admin, refresh }) 
               <Counts entity={t} />
             </div>
             <PeriodGrid
-              entity={t} slots={data.slots} days={data.days} lunchIndex={data.lunchIndex}
+              entity={t} slots={data.slots} days={data.days} lunchIndex={data.lunchIndex} now={now}
               onEditCell={admin ? (day, slot, current) => setEditing({ trainerName: t.name, day, slot, current }) : undefined}
             />
             {!!free.length && <p className="free-note">● Free all day: {free.join(', ')}</p>}
@@ -477,7 +471,7 @@ function TrainerView({ data, query, trackFilter = 'teaching', admin, refresh }) 
   );
 }
 
-function VenueView({ data }) {
+function VenueView({ data, now }) {
   const host = useRef(null);
   useEffect(() => reveal(host.current), [data]);
 
@@ -497,7 +491,7 @@ function VenueView({ data }) {
               </div>
               <Counts entity={v} />
             </div>
-            <PeriodGrid entity={v} slots={data.slots} days={data.days} lunchIndex={data.lunchIndex} />
+            <PeriodGrid entity={v} slots={data.slots} days={data.days} lunchIndex={data.lunchIndex} now={now} />
             {!!free.length && <p className="free-note">● Free all day: {free.join(', ')}</p>}
           </article>
         );

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Field } from '../admin/ui.jsx';
 import { api } from '../lib/api.js';
+import { useFeedback } from '../lib/feedback.jsx';
 
 const QUICK_TAGS = [
   'Digital Marketing',
@@ -26,6 +27,7 @@ export default function ActivityModal({
   onClose,
   onSaved,
 }) {
+  const { toast } = useFeedback();
   const [selectedDay, setSelectedDay] = useState(day);
   const [selectedSlots, setSelectedSlots] = useState([slot]);
   const [fromSlot, setFromSlot] = useState(slot);
@@ -108,6 +110,7 @@ export default function ActivityModal({
         throw new Error(`Only ${r?.count ?? 0} of ${selectedSlots.length} periods were saved — please try again.`);
       }
       onClose();
+      toast(`Saved for ${trainerName} · ${selectedDay}, ${r.count} period${r.count === 1 ? '' : 's'}`);
       /* the save has landed; a failed reload just means the board is a beat behind */
       await Promise.resolve(onSaved()).catch(() => {});
     } catch (e) { setError(e.message); }
@@ -124,6 +127,7 @@ export default function ActivityModal({
         slots: selectedSlots,
       });
       onClose();
+      toast(`Cleared ${selectedSlots.length} period${selectedSlots.length === 1 ? '' : 's'} for ${trainerName} on ${selectedDay}`);
       await Promise.resolve(onSaved()).catch(() => {});
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }

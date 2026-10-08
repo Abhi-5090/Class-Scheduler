@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { announceChange } from './Console.jsx';
-import { Modal, PageHead, Field, Notice, EmptyState, Spinner, confirmDelete } from './ui.jsx';
-import { exportTrainerPDF, exportAllTrainersPDF } from '../lib/pdfExport.js';
+import { Modal, PageHead, Field, Notice, EmptyState, Spinner, useTable, SortTh, SearchBox } from './ui.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
+import { exportTrainerPDF, exportAllTrainersPDF } from '../lib/pdf.js';
 
 const blank = { name: '', email: '', phone: '', track: 'teaching', active: true };
 
 export default function TrainersTab() {
+  const { toast, confirm } = useFeedback();
   const [rows, setRows] = useState(null);
   const [batches, setBatches] = useState([]);
   const [scheduleData, setScheduleData] = useState(null);
@@ -35,7 +37,7 @@ export default function TrainersTab() {
   };
   useEffect(() => { reload(); }, []);
 
-  const flash = msg => { setOk(msg); setError(''); setTimeout(() => setOk(''), 2600); };
+  const flash = msg => { setError(''); toast(msg); };
 
   /* how many periods a week this trainer actually holds and what tasks they have */
   const load = name => {
@@ -62,10 +64,10 @@ export default function TrainersTab() {
     setExporting(true); setError('');
     try {
       const schedule = await api.schedule();
-      exportAllTrainersPDF(schedule);
+      await exportAllTrainersPDF(schedule);
       flash('Consolidated trainer schedules PDF downloaded');
     } catch (e) {
-      setError(e.message);
+      toast(e.message, 'error');
     } finally {
       setExporting(false);
     }
@@ -77,14 +79,14 @@ export default function TrainersTab() {
       const schedule = await api.schedule();
       const trainerView = schedule.trainers.find(t => t.name === trainerDoc.name);
       if (!trainerView) throw new Error('Trainer schedule not found');
-      exportTrainerPDF(trainerView, {
+      await exportTrainerPDF(trainerView, {
         slots: schedule.slots,
         days: schedule.days,
         lunchIndex: schedule.lunchIndex,
       });
       flash(`Timetable PDF for ${trainerDoc.name} downloaded`);
     } catch (e) {
-      setError(e.message);
+      toast(e.message, 'error');
     }
   };
 
@@ -112,18 +114,44 @@ export default function TrainersTab() {
 
   async function remove(t) {
     const { main, support, other } = load(t.name);
-    const total = main + support + other;
-    const extra = total
-      ? `\n\n${t.name} is on ${total} period(s) a week. Deleting removes them from every session and assigned task.`
-      : '';
-    if (!window.confirm(`Delete ${t.name}?${extra}\n\nThis cannot be undone.`)) return;
+    const inBatches = batches.filter(b => (b.sessions || []).some(s => (s.mainTrainers || []).includes(t.name) || (s.supportTrainers || []).includes(t.name)));
+    const sure = await confirm({
+      title: `Delete ${t.name}?`,
+      body: main + support + other ? (
+        <>
+          <p>{t.name} is on the timetable every week. Deleting them will:</p>
+          <ul className="impact">
+            {!!(main + support) && <li>remove them from <b>{main + support} class period{main + support === 1 ? '' : 's'}</b> in <b>{inBatches.length} batch{inBatches.length === 1 ? '' : 'es'}</b>{inBatches.length ? ` (${inBatches.slice(0, 4).map(b => b.name).join(', ')}${inBatches.length > 4 ? ', …' : ''})` : ''}</li>}
+            {!!other && <li>clear <b>{other} assigned work period{other === 1 ? '' : 's'}</b></li>}
+            {!!main && <li>leave {main === 1 ? 'that class' : 'those classes'} without a main mentor until you assign one</li>}
+          </ul>
+          <p className="muted">This cannot be undone. To keep them on record but off the board, edit them and untick “Active” instead.</p>
+        </>
+      ) : <p>{t.name} has no classes or assigned work. This cannot be undone.</p>,
+      confirmLabel: 'Delete trainer',
+      danger: true,
+    });
+    if (!sure) return;
     try {
       await api.remove('trainers', t._id);
       await reload();
       announceChange();
       flash(`Deleted ${t.name}`);
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
+
+  const nonTeaching = t => t.track === 'non-teaching' || t.track === 'non-technical';
+  const byTrack = (rows || []).filter(t => trackFilter === 'All' || (trackFilter === 'non-teaching' ? nonTeaching(t) : !nonTeaching(t)));
+  const table = useTable(byTrack, {
+    text: t => `${t.name} ${t.email || ''} ${t.phone || ''}`,
+    sorts: {
+      name: t => t.name,
+      track: t => (nonTeaching(t) ? 1 : 0),
+      load: t => { const l = load(t.name); return l.main + l.support + l.other; },
+      status: t => (t.active ? 0 : 1),
+    },
+    initial: 'name',
+  });
 
   if (!rows) {
     return (
@@ -193,36 +221,42 @@ export default function TrainersTab() {
               >
                 Non-Teaching ({rows.filter(t => t.track === 'non-teaching' || t.track === 'non-technical').length})
               </button>
+              <SearchBox value={table.query} onChange={table.setQuery} label="Search trainers by name, email or phone" placeholder="Search trainer…" />
             </div>
-            <table className="tbl">
+            {!table.rows.length ? (
+              <EmptyState title="No trainers match">Nothing matches “{table.query.trim()}” in this category.</EmptyState>
+            ) : (
+            <table className="tbl stack">
+              <caption className="sr-only">Trainers, their track and weekly load</caption>
               <thead>
-                <tr><th>Name</th><th>Track</th><th>Contact</th><th>Weekly load & assignments</th><th>Status</th><th className="act">Actions</th></tr>
+                <tr>
+                  <SortTh label="Name" k="name" table={table} />
+                  <SortTh label="Track" k="track" table={table} />
+                  <th>Contact</th>
+                  <SortTh label="Weekly load & assignments" k="load" table={table} />
+                  <SortTh label="Status" k="status" table={table} />
+                  <th className="act">Actions</th>
+                </tr>
               </thead>
               <tbody>
-                {rows
-                  .filter(t => {
-                    if (trackFilter === 'All') return true;
-                    const isNonTeaching = t.track === 'non-teaching' || t.track === 'non-technical';
-                    return trackFilter === 'non-teaching' ? isNonTeaching : !isNonTeaching;
-                  })
-                  .map(t => {
+                {table.rows.map(t => {
                   const { main, support, other, activities } = load(t.name);
                   const taskNames = Object.entries(activities).map(([k, v]) => `${k} (${v})`).join(', ');
                   const isNonTeaching = t.track === 'non-teaching' || t.track === 'non-technical';
                   return (
                     <tr key={t._id}>
-                      <td className="nm">{t.name}</td>
-                      <td>
+                      <td className="nm" data-label="Name">{t.name}</td>
+                      <td data-label="Track">
                         <span className={`pill-tag ${isNonTeaching ? 'alt' : 'accent'}`}>
                           {isNonTeaching ? 'Non-Teaching' : 'Teaching'}
                         </span>
                       </td>
-                      <td className="muted" style={{ fontSize: 13 }}>
+                      <td className="muted" style={{ fontSize: 13 }} data-label="Contact">
                         {t.email || t.phone
                           ? <>{t.email}{t.email && t.phone && <br />}{t.phone}</>
                           : '—'}
                       </td>
-                      <td>
+                      <td data-label="Weekly load">
                         {main || support || other ? (
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                             {!!main && <span className="pill-tag">{main} main</span>}
@@ -235,24 +269,26 @@ export default function TrainersTab() {
                           </div>
                         ) : <span className="muted">unassigned</span>}
                       </td>
-                      <td>{t.active ? <span className="pill-tag">active</span> : <span className="pill-tag grey">hidden</span>}</td>
+                      <td data-label="Status">{t.active ? <span className="pill-tag">active</span> : <span className="pill-tag grey">hidden</span>}</td>
                       <td className="act">
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
                           onClick={() => handleExportTrainerPDF(t)}
                           title={`Export PDF timetable for ${t.name}`}
+                          aria-label={`Download ${t.name}'s timetable as PDF`}
                         >
                           PDF
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => open({ ...t, track: (t.track === 'non-teaching' || t.track === 'non-technical') ? 'non-teaching' : 'teaching' })}>Edit</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => remove(t)}>Delete</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => open({ ...t, track: (t.track === 'non-teaching' || t.track === 'non-technical') ? 'non-teaching' : 'teaching' })} aria-label={`Edit ${t.name}`}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => remove(t)} aria-label={`Delete ${t.name}`}>Delete</button>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            )}
           </div>
         )}
       </div>
@@ -266,7 +302,7 @@ export default function TrainersTab() {
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
-                {editing._id ? 'Save changes' : 'Add trainer'}
+                {saving ? 'Saving…' : editing._id ? 'Save changes' : 'Add trainer'}
               </button>
             </>
           }

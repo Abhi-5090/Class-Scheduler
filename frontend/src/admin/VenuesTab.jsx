@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { announceChange } from './Console.jsx';
-import { Modal, PageHead, Field, Notice, EmptyState, Spinner } from './ui.jsx';
+import { Modal, PageHead, Field, Notice, EmptyState, Spinner, useTable, SortTh, SearchBox } from './ui.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
 
 const blank = { name: '', capacity: 0, active: true };
 
 export default function VenuesTab() {
+  const { toast, confirm } = useFeedback();
   const [rows, setRows] = useState(null);
   const [batches, setBatches] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -25,7 +27,7 @@ export default function VenuesTab() {
   };
   useEffect(() => { reload(); }, []);
 
-  const flash = msg => { setOk(msg); setError(''); setTimeout(() => setOk(''), 2600); };
+  const flash = msg => { setError(''); toast(msg); };
 
   const users = name => (batches || []).filter(b => (b.sessions || []).some(s => s.venue === name));
 
@@ -48,17 +50,32 @@ export default function VenuesTab() {
   async function remove(v) {
     const held = users(v.name);
     const sessionCount = held.reduce((n, b) => n + (b.sessions || []).filter(s => s.venue === v.name).length, 0);
-    const extra = held.length
-      ? `\n\n${sessionCount} session(s) across ${held.length} batch(es) use this hall — they will be left without one:\n${held.map(b => `• ${b.name}`).join('\n')}`
-      : '';
-    if (!window.confirm(`Delete "${v.name}"?${extra}\n\nThis cannot be undone.`)) return;
+    const sure = await confirm({
+      title: `Delete "${v.name}"?`,
+      body: held.length ? (
+        <>
+          <p><b>{sessionCount} session{sessionCount === 1 ? '' : 's'}</b> in <b>{held.length} batch{held.length === 1 ? '' : 'es'}</b> meet here. They will be left without a hall until you pick another:</p>
+          <ul className="impact">{held.slice(0, 8).map(b => <li key={b._id}>{b.name}</li>)}{held.length > 8 && <li>…and {held.length - 8} more</li>}</ul>
+          <p className="muted">This cannot be undone. To keep it on record but off the board, edit it and untick “Active” instead.</p>
+        </>
+      ) : <p>No batch uses this hall. This cannot be undone.</p>,
+      confirmLabel: 'Delete hall',
+      danger: true,
+    });
+    if (!sure) return;
     try {
       await api.remove('venues', v._id);
       await reload();
       announceChange();
       flash(`Deleted ${v.name}`);
-    } catch (e) { setError(e.message); }
+    } catch (e) { toast(e.message, 'error'); }
   }
+
+  const table = useTable(rows, {
+    text: v => `${v.name} ${users(v.name).map(b => b.name).join(' ')}`,
+    sorts: { name: v => v.name, capacity: v => Number(v.capacity) || 0, batches: v => users(v.name).length, status: v => (v.active ? 0 : 1) },
+    initial: 'name',
+  });
 
   if (!rows) {
     return (
@@ -92,30 +109,44 @@ export default function VenuesTab() {
           </EmptyState>
         ) : (
           <div className="tbl-wrap">
-            <table className="tbl">
+            <div className="admin-filter-bar">
+              <SearchBox value={table.query} onChange={table.setQuery} label="Search halls by name or batch" placeholder="Search hall or batch…" />
+            </div>
+            {!table.rows.length ? (
+              <EmptyState title="No halls match">Nothing matches “{table.query.trim()}”.</EmptyState>
+            ) : (
+            <table className="tbl stack">
+              <caption className="sr-only">Training halls and the batches that use them</caption>
               <thead>
-                <tr><th>Hall</th><th>Capacity</th><th>Batches</th><th>Status</th><th className="act">Actions</th></tr>
+                <tr>
+                  <SortTh label="Hall" k="name" table={table} />
+                  <SortTh label="Capacity" k="capacity" table={table} />
+                  <SortTh label="Batches" k="batches" table={table} />
+                  <SortTh label="Status" k="status" table={table} />
+                  <th className="act">Actions</th>
+                </tr>
               </thead>
               <tbody>
-                {rows.map(v => {
+                {table.rows.map(v => {
                   const held = users(v.name);
                   return (
                     <tr key={v._id}>
-                      <td className="nm">{v.name}</td>
-                      <td className="mono">{v.capacity || '—'}</td>
-                      <td className="muted" style={{ fontSize: 13 }}>
+                      <td className="nm" data-label="Hall">{v.name}</td>
+                      <td className="mono" data-label="Capacity">{v.capacity || '—'}</td>
+                      <td className="muted" style={{ fontSize: 13 }} data-label="Batches">
                         {held.length ? held.map(b => b.name).join(', ') : <span className="muted">none</span>}
                       </td>
-                      <td>{v.active ? <span className="pill-tag">active</span> : <span className="pill-tag grey">hidden</span>}</td>
+                      <td data-label="Status">{v.active ? <span className="pill-tag">active</span> : <span className="pill-tag grey">hidden</span>}</td>
                       <td className="act">
-                        <button className="btn btn-ghost btn-sm" onClick={() => open({ ...v })}>Edit</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => remove(v)}>Delete</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => open({ ...v })} aria-label={`Edit ${v.name}`}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => remove(v)} aria-label={`Delete ${v.name}`}>Delete</button>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            )}
           </div>
         )}
       </div>
@@ -129,7 +160,7 @@ export default function VenuesTab() {
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
-                {editing._id ? 'Save changes' : 'Add hall'}
+                {saving ? 'Saving…' : editing._id ? 'Save changes' : 'Add hall'}
               </button>
             </>
           }
