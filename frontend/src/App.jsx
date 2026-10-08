@@ -12,7 +12,7 @@ import VenuesTab from './admin/VenuesTab.jsx';
 import GroupsTab from './admin/GroupsTab.jsx';
 import PeriodsTab from './admin/PeriodsTab.jsx';
 import SettingsTab from './admin/SettingsTab.jsx';
-import TroyBot from './components/TroyBot.jsx';
+import AssistantBot from './components/AssistantBot.jsx';
 
 function Gate({ children }) {
   const { admin, ready } = useAdmin();
@@ -47,7 +47,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      <TroyBot />
+      <AssistantBot />
     </AdminProvider>
   );
 }

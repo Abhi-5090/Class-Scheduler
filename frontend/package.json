@@ -1,9 +1,9 @@
 {
-  "name": "torii-frontend",
+  "name": "class-scheduler-frontend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Torii training schedule board — React",
+  "description": "Class Scheduler — training schedule board (React)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -18,6 +18,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.0"
+    "vite": "^6.4.4"
   }
 }

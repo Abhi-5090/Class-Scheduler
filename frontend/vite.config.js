@@ -10,12 +10,6 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5180,
     strictPort: true,
-
-    allowedHosts: [
-      'toriiminds.com',
-      'www.toriiminds.com',
-    ],
-
     proxy: {
       '/api': {
         target: 'http://localhost:4000',

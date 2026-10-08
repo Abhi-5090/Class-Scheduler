@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
-import { answerScheduleQuery } from '../lib/troyEngine.js';
-import '../styles/troy.css';
+import { answerScheduleQuery } from '../lib/assistantEngine.js';
+import '../styles/assistant.css';
 
 const INITIAL_MESSAGE = {
   id: 'welcome',
   sender: 'bot',
-  text: "Hello! 👋 I'm **Troy**, your AI schedule assistant for **Torii Training Management**.\n\nI'm trained live on our entire schedule database. Ask me about trainers, batches, venue occupancy, subjects, or daily timetables!",
+  text: "Hello! 👋 I'm the **Schedule Assistant** for **Class Scheduler**.\n\nI'm trained live on our entire schedule database. Ask me about trainers, batches, venue occupancy, subjects, or daily timetables!",
   time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
 };
 
@@ -21,7 +21,7 @@ const SUGGESTIONS = [
   "🎓 Show all batches",
 ];
 
-export default function TroyBot() {
+export default function AssistantBot() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [input, setInput] = useState('');
@@ -36,7 +36,7 @@ export default function TroyBot() {
     let mounted = true;
     api.schedule()
       .then(data => { if (mounted) setScheduleData(data); })
-      .catch(err => console.warn('Troy: Failed to fetch live schedule', err));
+      .catch(err => console.warn('Assistant: Failed to fetch live schedule', err));
 
     return () => { mounted = false; };
   }, []);
@@ -85,7 +85,7 @@ export default function TroyBot() {
         currentData = await api.schedule();
         setScheduleData(currentData);
       } catch (err) {
-        console.warn('Troy error loading data', err);
+        console.warn('Assistant error loading data', err);
       }
     }
 
@@ -145,24 +145,24 @@ export default function TroyBot() {
   return (
     <>
       {/* ── Floating Launcher ── */}
-      <div className="troy-launcher-wrap">
-        <div className="troy-tooltip">
+      <div className="asst-launcher-wrap">
+        <div className="asst-tooltip">
           <span>How can I help you?</span>
           <span style={{ fontSize: '14px' }}>👋</span>
         </div>
 
         <button
           type="button"
-          className="troy-btn"
+          className="asst-btn"
           onClick={() => (open ? setOpen(false) : handleOpen())}
-          aria-label="Open Troy Schedule Assistant"
-          title="Chat with Troy (Torii Schedule AI)"
+          aria-label="Open Schedule Assistant"
+          title="Chat with the Schedule Assistant"
         >
-          <span className="troy-pulse-ring" />
-          <span className="troy-pulse-ring" />
-          <span className="troy-btn-badge" />
+          <span className="asst-pulse-ring" />
+          <span className="asst-pulse-ring" />
+          <span className="asst-btn-badge" />
 
-          <svg className="troy-btn-icon" viewBox="0 0 24 24">
+          <svg className="asst-btn-icon" viewBox="0 0 24 24">
             <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h2a5 5 0 0 1 5 5v1h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-1v1a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-1H3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h1v-1a5 5 0 0 1 5-5h2V5.72A2 2 0 0 1 10 4a2 2 0 0 1 2-2zm-3 8a3 3 0 0 0-3 3v5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-5a3 3 0 0 0-3-3H9zm-1 3.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm8 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" />
           </svg>
         </button>
@@ -170,30 +170,30 @@ export default function TroyBot() {
 
       {/* ── Chat Window ── */}
       {open && (
-        <div className="troy-window" role="dialog" aria-label="Troy Schedule Assistant Chat Window">
+        <div className="asst-window" role="dialog" aria-label="Schedule Assistant chat window">
           {/* Header */}
-          <div className="troy-header">
-            <div className="troy-header-left">
-              <div className="troy-avatar">
+          <div className="asst-header">
+            <div className="asst-header-left">
+              <div className="asst-avatar">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h2a5 5 0 0 1 5 5v1h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-1v1a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-1H3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h1v-1a5 5 0 0 1 5-5h2V5.72A2 2 0 0 1 10 4a2 2 0 0 1 2-2zm-3 8a3 3 0 0 0-3 3v5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-5a3 3 0 0 0-3-3H9zm-1 3.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm8 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" />
                 </svg>
-                <span className="troy-status-dot" />
+                <span className="asst-status-dot" />
               </div>
-              <div className="troy-title-group">
-                <span className="troy-title">
-                  Troy <span className="troy-sparkle">✦</span>
+              <div className="asst-title-group">
+                <span className="asst-title">
+                  Assistant <span className="asst-sparkle">✦</span>
                 </span>
-                <span className="troy-subtitle">
-                  <span className="troy-live-pill" /> Live Schedule Data
+                <span className="asst-subtitle">
+                  <span className="asst-live-pill" /> Live Schedule Data
                 </span>
               </div>
             </div>
 
-            <div className="troy-header-actions">
+            <div className="asst-header-actions">
               <button
                 type="button"
-                className="troy-hbtn"
+                className="asst-hbtn"
                 onClick={handleClear}
                 title="Clear conversation"
                 aria-label="Clear chat"
@@ -205,7 +205,7 @@ export default function TroyBot() {
               </button>
               <button
                 type="button"
-                className="troy-hbtn"
+                className="asst-hbtn"
                 onClick={() => setOpen(false)}
                 title="Close chat"
                 aria-label="Close"
@@ -219,22 +219,22 @@ export default function TroyBot() {
           </div>
 
           {/* Messages Stream */}
-          <div className="troy-messages">
+          <div className="asst-messages">
             {messages.map(msg => (
-              <div key={msg.id} className={`troy-msg ${msg.sender}`}>
-                <div className="troy-msg-bubble">
+              <div key={msg.id} className={`asst-msg ${msg.sender}`}>
+                <div className="asst-msg-bubble">
                   {renderFormattedText(msg.text)}
-                  <span className="troy-msg-time">{msg.time}</span>
+                  <span className="asst-msg-time">{msg.time}</span>
                 </div>
               </div>
             ))}
 
             {typing && (
-              <div className="troy-msg bot">
-                <div className="troy-typing">
-                  <span className="troy-dot" />
-                  <span className="troy-dot" />
-                  <span className="troy-dot" />
+              <div className="asst-msg bot">
+                <div className="asst-typing">
+                  <span className="asst-dot" />
+                  <span className="asst-dot" />
+                  <span className="asst-dot" />
                 </div>
               </div>
             )}
@@ -242,12 +242,12 @@ export default function TroyBot() {
           </div>
 
           {/* Suggestion Chips */}
-          <div className="troy-suggestions">
+          <div className="asst-suggestions">
             {SUGGESTIONS.map((s, idx) => (
               <button
                 key={idx}
                 type="button"
-                className="troy-chip"
+                className="asst-chip"
                 onClick={() => handleSend(s)}
               >
                 {s}
@@ -257,7 +257,7 @@ export default function TroyBot() {
 
           {/* Input Bar */}
           <form
-            className="troy-input-bar"
+            className="asst-input-bar"
             onSubmit={e => {
               e.preventDefault();
               handleSend();
@@ -265,16 +265,16 @@ export default function TroyBot() {
           >
             <input
               ref={inputRef}
-              className="troy-input"
+              className="asst-input"
               type="text"
-              placeholder="Ask Troy about trainers, batches, halls..."
+              placeholder="Ask about trainers, batches, halls..."
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
             />
             <button
               type="submit"
-              className="troy-send-btn"
+              className="asst-send-btn"
               disabled={!input.trim() || typing}
               aria-label="Send query"
             >

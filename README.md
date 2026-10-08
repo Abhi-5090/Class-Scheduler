@@ -1,12 +1,11 @@
-# Torii · NCET Training Schedule
+# Class Scheduler · NCET Training Schedule
 
 The weekly schedule board, split into a React frontend and a Node/Express + MongoDB
 backend. The board itself is public; creating and changing the schedule is done by the
 admin, behind a login.
 
 ```
-Torii Schedule/
-├── Torii Schedule.html     the original single-file board, kept as the design reference
+Class Calender Scheduler/
 ├── frontend/               React + Vite      → the public board and the admin console
 └── backend/                Node + Express    → the API and MongoDB
 ```
@@ -44,12 +43,29 @@ It is gitignored; `backend/.env.example` is the template.
 
 ```
 MONGODB_URI=…            your Atlas connection string
-JWT_SECRET=…             random; rotating it signs the admin out
+JWT_SECRET=…             random, 32+ characters (the API refuses to start otherwise)
 ADMIN_EMAIL=…            hashed into MongoDB on first boot
 ADMIN_PASSWORD=…         change this before going live
 PORT=4000
-CLIENT_ORIGIN=http://localhost:5180
+CLIENT_ORIGIN=http://localhost:5180   comma-separated list of sites allowed to use the admin API
+APP_TZ=Asia/Kolkata                  optional; decides "today" for batch dates
 ```
+
+## Security
+
+- The admin API only answers the sites in `CLIENT_ORIGIN`, and every write must carry the
+  `X-Requested-With: fetch` header the app sends, so other sites cannot forge requests.
+- Login is rate-limited (6 failures per email, 20 per IP, per 15 minutes).
+- Changing the password signs out every device.
+- The public `/api/schedule` never includes trainer email or phone.
+- Server errors are logged on the server and returned to the browser only as a generic message.
+
+### Deploying
+
+The frontend calls `/api` on its own origin by default, which the Vite dev server proxies to
+`localhost:4000`. For a deploy, set `VITE_API_URL` on the frontend to the backend's public URL
+(e.g. `https://your-api.example.com`) and set `CLIENT_ORIGIN` and `NODE_ENV=production` on the
+backend.
 
 The admin account is created on the first boot that finds no matching email. After that
 the seeded password is ignored, so a password changed from the Settings tab sticks.
@@ -102,8 +118,9 @@ that referred to it by name, so nothing is orphaned.
 
 ## Notes
 
-- `frontend/src/styles/torii.css` is the original stylesheet, unchanged. Everything new
-  is in `console.css`, built from the same tokens.
+- `frontend/src/styles/base.css` holds the design tokens and the public board; `console.css`
+  (admin), `calendar.css` and `assistant.css` are built from the same tokens. The palette is
+  cobalt `#0047AB`, black and white — see the comment at the top of `base.css`.
 - The theme reveal — the circle that wipes across on light/dark — is ported as-is in
   `frontend/src/lib/theme.js`.
 - `npm run seed -- --fresh` wipes the schedule collections before loading. The admin

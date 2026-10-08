@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LOGO } from '../assets/logo.js';
+import Wordmark from '../components/Wordmark.jsx';
+import ThemeButton from '../components/ThemeButton.jsx';
 import { useAdmin } from '../lib/useAdmin.js';
 import { api } from '../lib/api.js';
 
@@ -31,7 +32,7 @@ export default function Console() {
   const navigate = useNavigate();
   const [counts, setCounts] = useState(null);
 
-  useEffect(() => { document.title = 'Torii Admin Console'; }, []);
+  useEffect(() => { document.title = 'Admin Console · Class Scheduler'; }, []);
 
   /* the sidebar counts come off the same public payload the board reads */
   const refreshCounts = () => api.schedule().then(setCounts).catch(() => {});
@@ -40,15 +41,15 @@ export default function Console() {
   /* Tabs fire this after any mutation so the sidebar never goes stale. */
   useEffect(() => {
     const onChanged = () => refreshCounts();
-    addEventListener('torii:changed', onChanged);
-    return () => removeEventListener('torii:changed', onChanged);
+    addEventListener('schedule:changed', onChanged);
+    return () => removeEventListener('schedule:changed', onChanged);
   }, []);
 
   return (
     <div className="console">
       <aside className="side">
         <div className="side-mark">
-          <img src={LOGO} alt="Torii" />
+          <Wordmark size={34} />
           <div><span className="tag">Admin Console</span></div>
         </div>
 
@@ -77,6 +78,7 @@ export default function Console() {
       </aside>
 
       <main className="main">
+        <div className="console-bar"><ThemeButton surface /></div>
         <Outlet />
       </main>
     </div>
@@ -85,4 +87,4 @@ export default function Console() {
 
 /* Any tab that changes data calls this so the sidebar counts and the
    dashboard refresh without threading a callback through every screen. */
-export const announceChange = () => dispatchEvent(new Event('torii:changed'));
+export const announceChange = () => dispatchEvent(new Event('schedule:changed'));

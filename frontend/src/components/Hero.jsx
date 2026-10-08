@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { LOGO } from '../assets/logo.js';
+import Wordmark from './Wordmark.jsx';
 import ThemeButton from './ThemeButton.jsx';
 import { LockIcon } from './Icons.jsx';
 
@@ -19,7 +19,7 @@ export default function Hero({ admin }) {
       </div>
 
       <div className="hero-inner">
-        <img className="logo" src={LOGO} alt="Torii" />
+        <Wordmark size={46} className="logo" />
         <p className="eyebrow">NCET · Training Management</p>
         <h1>Weekly <span className="o">Schedule</span> Board</h1>
         <p className="lede">

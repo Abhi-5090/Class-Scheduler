@@ -29,8 +29,8 @@ export function abbreviateBatch(str) {
 /**
  * Abbreviate venue / hall names for compact or mobile timetable slot views.
  * Examples:
- *   "Torii Block · 1st Floor Hall" => "Torii · 1F"
- *   "Torii Block · 2nd Floor Hall" => "Torii · 2F"
+ *   "Training Block · 1st Floor Hall" => "Training · 1F"
+ *   "Training Block · 2nd Floor Hall" => "Training · 2F"
  *   "Examination Block · 3rd Floor Hall" => "Exam · 3F"
  *   "Main Block · Seminar Hall 1" => "Main · Sem Hall 1"
  */
@@ -38,7 +38,7 @@ export function abbreviateVenue(str) {
   if (!str) return '';
   let s = String(str)
     .replace(/Examination Block/gi, 'Exam')
-    .replace(/Torii Block/gi, 'Torii')
+    .replace(/Training Block/gi, 'Training')
     .replace(/(\d+)(?:st|nd|rd|th)\s+Floor\s+(?:Hall|Auditorium|Lab)?/gi, '$1F')
     .replace(/Ground\s+Floor/gi, 'GF')
     .replace(/Seminar Hall/gi, 'Sem Hall')

@@ -7,21 +7,22 @@ import HallPicker from './HallPicker.jsx';
  * Asks the API who is already busy at this day + period, so a clash shows up
  * while the session is being written rather than after it is saved.
  */
-function useAvailability(day, slots = [], excludeBatch) {
-  const [busy, setBusy] = useState({ trainers: {}, venues: {} });
+function useAvailability(day, slots = [], excludeBatch, range = {}) {
+  const [busy, setBusy] = useState({ trainers: {}, venues: {}, failed: false });
 
-  const key = `${day}|${[...(slots || [])].sort((a, b) => a - b).join(',')}`;
+  const key = `${day}|${[...(slots || [])].sort((a, b) => a - b).join(',')}|${range.from || ''}|${range.to || ''}`;
   useEffect(() => {
-    if (!day || !slots?.length) { setBusy({ trainers: {}, venues: {} }); return; }
+    if (!day || !slots?.length) { setBusy({ trainers: {}, venues: {}, failed: false }); return; }
     let live = true;
     const t = setTimeout(() => {
-      api.availability([{ day, slots }], excludeBatch)
+      api.availability([{ day, slots }], excludeBatch, range)
         .then(r => {
           if (!live) return;
           const map = list => Object.fromEntries(list.filter(x => x.busyWith).map(x => [x.name, x.busyWith]));
-          setBusy({ trainers: map(r.trainers), venues: map(r.venues) });
+          setBusy({ trainers: map(r.trainers), venues: map(r.venues), failed: false });
         })
-        .catch(() => {});
+        /* say so rather than silently showing everyone as free */
+        .catch(() => { if (live) setBusy({ trainers: {}, venues: {}, failed: true }); });
     }, 180);
     return () => { live = false; clearTimeout(t); };
   }, [key, excludeBatch]);            // eslint-disable-line react-hooks/exhaustive-deps
@@ -58,8 +59,11 @@ function MentorPicker({ label, help, all, chosen = [], exclude = [], busy = {}, 
   );
 }
 
-export default function SessionEditor({ index, session, config, trainers, venues, batchId, onChange, onRemove }) {
-  const busy = useAvailability(session.day, session.slots || [], batchId);
+export default function SessionEditor({ index, session, config, trainers, venues, batchId, batchDates = {}, onChange, onRemove }) {
+  /* the dates this session runs: its own, else the batch's — only classes
+     overlapping them can clash, the same rule the server applies on save */
+  const range = { from: session.startDate || batchDates.startDate || '', to: session.endDate || batchDates.endDate || '' };
+  const busy = useAvailability(session.day, session.slots || [], batchId, range);
 
   const set = patch => onChange({ ...session, ...patch });
 
@@ -120,12 +124,17 @@ export default function SessionEditor({ index, session, config, trainers, venues
         </div>
       </Field>
 
+      {busy.failed && (
+        <div className="admin-hint">Could not check who is free right now — saving will still refuse a double-booking.</div>
+      )}
+
       <HallPicker
         scope="session"
         venues={venues}
         sessions={[session]}
         value={session.venue}
         batchId={batchId}
+        range={range}
         onChange={venue => set({ venue })}
       />
 

@@ -11,7 +11,7 @@ const REVEAL_MS = 1100, FEATHER = 96;
 
 export function applyTheme(t) {
   root.dataset.theme = t;
-  try { localStorage.setItem('torii-theme', t); } catch (e) {}
+  try { localStorage.setItem('cs-theme', t); } catch (e) {}
 }
 
 export function currentTheme() {
@@ -55,7 +55,7 @@ function fallbackReveal(x, y, end, next) {
   const soft = r => `radial-gradient(circle${at}, #000 ${r}px, rgba(0,0,0,0) ${r + FEATHER}px)`;
   const veil = document.createElement('div');
   veil.className = 'veil';
-  veil.style.background = next === 'dark' ? '#100E0C' : '#FFF8F4';
+  veil.style.background = next === 'dark' ? '#070708' : '#F6F8FB';
   veil.style.clipPath = `circle(${FEATHER}px${at})`;
   veil.style.webkitMaskImage = veil.style.maskImage = soft(0);
   document.body.appendChild(veil);

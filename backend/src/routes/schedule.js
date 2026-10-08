@@ -30,10 +30,4 @@ router.get('/', wrap(async (_req, res) => {
   res.json(await loadSchedule());
 }));
 
-router.post('/chat', wrap(async (req, res) => {
-  const message = String(req.body?.message || '').trim();
-  const schedule = await loadSchedule();
-  res.json({ ok: true, message, scheduleAvailable: !!schedule });
-}));
-
 export default router;

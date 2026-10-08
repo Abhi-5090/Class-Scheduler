@@ -14,11 +14,11 @@ const describe = c => `${shortDay(c.day)} ${c.slot} · ${c.batch}`;
 /*
  * A hall has to be free at *every* one of the batch's session times to be worth
  * assigning, so this asks about all of them at once rather than one session at
- * a time. Occupied halls are still selectable — sharing a hall is sometimes
- * deliberate — but the clash is spelled out before it is saved.
+ * a time. An occupied hall is marked with what holds it; the server refuses
+ * to save a double-booking, so this is the early warning.
  */
-export default function HallPicker({ venues, sessions, value, batchId, onChange, scope = 'batch' }) {
-  const [state, setState] = useState({ loading: false, venues: [] });
+export default function HallPicker({ venues, sessions, value, batchId, range = {}, onChange, scope = 'batch' }) {
+  const [state, setState] = useState({ loading: false, venues: [], failed: false });
 
   /* only sessions that are actually pinned down can be checked */
   const when = useMemo(
@@ -28,15 +28,15 @@ export default function HallPicker({ venues, sessions, value, batchId, onChange,
     [sessions],
   );
 
-  const key = JSON.stringify(when);
+  const key = JSON.stringify([when, range.from || '', range.to || '']);
   useEffect(() => {
     if (!when.length) { setState({ loading: false, venues: [] }); return; }
     let live = true;
     setState(s => ({ ...s, loading: true }));
     const t = setTimeout(() => {
-      api.availability(when, batchId)
-        .then(r => { if (live) setState({ loading: false, venues: r.venues }); })
-        .catch(() => { if (live) setState({ loading: false, venues: [] }); });
+      api.availability(when, batchId, range)
+        .then(r => { if (live) setState({ loading: false, venues: r.venues, failed: false }); })
+        .catch(() => { if (live) setState({ loading: false, venues: [], failed: true }); });
     }, 200);
     return () => { live = false; clearTimeout(t); };
   }, [key, batchId]);                 // eslint-disable-line react-hooks/exhaustive-deps
@@ -60,6 +60,7 @@ export default function HallPicker({ venues, sessions, value, batchId, onChange,
 
   return (
     <>
+      {state.failed && <div className="admin-hint">Could not check hall availability — saving will still refuse a double-booking.</div>}
       <Field label="Training hall" help={help}>
         <select value={value} onChange={e => onChange(e.target.value)}>
           <option value="">Not assigned yet</option>

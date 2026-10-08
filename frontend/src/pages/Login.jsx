@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { LOGO } from '../assets/logo.js';
+import Wordmark from '../components/Wordmark.jsx';
 import { useAdmin } from '../lib/useAdmin.js';
 import ThemeButton from '../components/ThemeButton.jsx';
 
 export default function Login() {
-  const { admin, ready, signIn } = useAdmin();
+  const { admin, ready, expired, signIn } = useAdmin();
   const navigate = useNavigate();
   const location = useLocation();
+  /* only ever return to a page inside the console */
+  const back = typeof location.state?.from === 'string' && location.state.from.startsWith('/admin') ? location.state.from : '/admin';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { document.title = 'Sign in · Torii Admin'; }, []);
+  useEffect(() => { document.title = 'Sign in · Class Scheduler'; }, []);
 
-  if (ready && admin) return <Navigate to={location.state?.from || '/admin'} replace />;
+  if (ready && admin) return <Navigate to={back} replace />;
 
   async function submit(e) {
     e.preventDefault();
@@ -24,7 +26,7 @@ export default function Login() {
     setBusy(true);
     try {
       await signIn(email, password);
-      navigate(location.state?.from || '/admin', { replace: true });
+      navigate(back, { replace: true });
     } catch (err) {
       setError(err.message);
       setPassword('');
@@ -38,9 +40,9 @@ export default function Login() {
       <div className="login-card">
         <div className="login-mark">
           <div className="login-logo-badge">
-            <img src={LOGO} alt="Torii" />
+            <Wordmark size={30} />
           </div>
-          <ThemeButton />
+          <ThemeButton surface />
         </div>
 
         <h1>Admin sign in</h1>
@@ -50,6 +52,7 @@ export default function Login() {
         </p>
 
         {error && <div className="form-error">{error}</div>}
+        {!error && expired && <div className="form-ok">Your session ended — please sign in again.</div>}
 
         <form onSubmit={submit}>
           <div className="field">

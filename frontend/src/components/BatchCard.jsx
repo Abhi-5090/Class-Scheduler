@@ -37,7 +37,7 @@ export default function BatchCard({ batch, dimUnless }) {
 
       <div className="rows">
         {batch.rows.map((r, i) => (
-          <div className={`srow ${dimUnless(r.day) ? '' : 'dim'}`} key={i}>
+          <div className={`srow ${dimUnless(r) ? '' : 'dim'}`} key={i}>
             <div className="day"><DayLabel day={r.day} /></div>
             <div>
               <div className="subj">{r.subject}</div>

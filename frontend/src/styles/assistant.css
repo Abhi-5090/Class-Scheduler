@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════════════════════════
-   TROY - AI CHATBOT COMPONENT STYLES
+   SCHEDULE ASSISTANT — CHATBOT COMPONENT STYLES
    ══════════════════════════════════════════════════════════════ */
 
 /* ── Floating Launcher Container ── */
-.troy-launcher-wrap {
+.asst-launcher-wrap {
   position: fixed;
   bottom: 26px;
   right: 26px;
@@ -14,15 +14,15 @@
 }
 
 /* ── Hover Tooltip (Speech Bubble) ── */
-.troy-tooltip {
+.asst-tooltip {
   position: absolute;
   right: calc(100% + 14px);
   top: 50%;
   transform: translateY(-50%) translateX(6px);
   background: var(--card, #ffffff);
-  color: var(--ink, #1b1815);
+  color: var(--ink, #0A0A0A);
   border: 1px solid var(--line, rgba(0, 0, 0, 0.1));
-  box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(241, 93, 35, 0.12);
+  box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(var(--accent-rgb), 0.12);
   border-radius: 14px;
   padding: 8px 14px;
   font-family: 'Space Grotesk', system-ui, sans-serif;
@@ -40,7 +40,7 @@
 }
 
 /* Triangle Pointer */
-.troy-tooltip::after {
+.asst-tooltip::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -51,53 +51,53 @@
   border-color: transparent transparent transparent var(--card, #ffffff);
 }
 
-.troy-launcher-wrap:hover .troy-tooltip {
+.asst-launcher-wrap:hover .asst-tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateY(-50%) translateX(0);
 }
 
 /* ── Pulsing Floating Circle Button ── */
-.troy-btn {
+.asst-btn {
   position: relative;
   width: 58px;
   height: 58px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #FF6F2C 0%, #F15D23 55%, #D84315 100%);
+  background: linear-gradient(135deg, #2F6FD6 0%, #0047AB 55%, #00337D 100%);
   border: none;
   cursor: pointer;
   display: grid;
   place-items: center;
   color: #ffffff;
-  box-shadow: 0 8px 24px -4px rgba(241, 93, 35, 0.65), 0 0 0 2px rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 24px -4px rgba(var(--accent-rgb), 0.65), 0 0 0 2px rgba(255, 255, 255, 0.25);
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s;
   outline: none;
 }
 
-.troy-btn:hover {
+.asst-btn:hover {
   transform: scale(1.08) translateY(-2px);
-  box-shadow: 0 12px 32px -4px rgba(241, 93, 35, 0.8), 0 0 0 3px rgba(255, 255, 255, 0.4);
+  box-shadow: 0 12px 32px -4px rgba(var(--accent-rgb), 0.8), 0 0 0 3px rgba(255, 255, 255, 0.4);
 }
 
-.troy-btn:active {
+.asst-btn:active {
   transform: scale(0.95);
 }
 
 /* ── Continuous Pulsing Radar Rings ── */
-.troy-pulse-ring {
+.asst-pulse-ring {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  border: 2px solid rgba(241, 93, 35, 0.7);
-  animation: troy-pulse-expand 2.4s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border: 2px solid rgba(var(--accent-rgb), 0.7);
+  animation: asst-pulse-expand 2.4s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
   pointer-events: none;
 }
 
-.troy-pulse-ring:nth-child(2) {
+.asst-pulse-ring:nth-child(2) {
   animation-delay: 1.2s;
 }
 
-@keyframes troy-pulse-expand {
+@keyframes asst-pulse-expand {
   0% {
     transform: scale(0.85);
     opacity: 0.9;
@@ -112,7 +112,7 @@
 }
 
 /* Bot Icon inside Button */
-.troy-btn-icon {
+.asst-btn-icon {
   width: 28px;
   height: 28px;
   fill: currentColor;
@@ -121,28 +121,28 @@
   transition: transform 0.2s;
 }
 
-.troy-btn:hover .troy-btn-icon {
+.asst-btn:hover .asst-btn-icon {
   transform: rotate(-8deg) scale(1.05);
 }
 
 /* Online Status Dot on Button */
-.troy-btn-badge {
+.asst-btn-badge {
   position: absolute;
   top: 1px;
   right: 1px;
   width: 13px;
   height: 13px;
-  background: #10B981;
+  background: #4D8BEA;
   border: 2.5px solid #ffffff;
   border-radius: 50%;
   z-index: 3;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+  box-shadow: 0 0 8px rgba(77, 139, 234, 0.8);
 }
 
 /* ══════════════════════════════════════════════════════════════
-   TROY - CHAT WINDOW
+   SCHEDULE ASSISTANT — CHAT WINDOW
    ══════════════════════════════════════════════════════════════ */
-.troy-window {
+.asst-window {
   position: fixed;
   bottom: 96px;
   right: 26px;
@@ -151,17 +151,17 @@
   background: var(--card, #ffffff);
   border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
   border-radius: 22px;
-  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(241, 93, 35, 0.12);
+  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(var(--accent-rgb), 0.12);
   z-index: 9999;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: troy-window-pop 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: asst-window-pop 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
-@keyframes troy-window-pop {
+@keyframes asst-window-pop {
   from {
     opacity: 0;
     transform: scale(0.92) translateY(18px);
@@ -173,8 +173,8 @@
 }
 
 /* ── Chat Header ── */
-.troy-header {
-  background: linear-gradient(135deg, #181512 0%, #241E18 60%, #2E221A 100%);
+.asst-header {
+  background: linear-gradient(135deg, var(--hero-a, #050505) 0%, var(--hero-b, #0A0F1C) 60%, var(--hero-c, #0B2350) 100%);
   color: #ffffff;
   padding: 14px 18px;
   display: flex;
@@ -184,48 +184,48 @@
   flex: none;
 }
 
-.troy-header-left {
+.asst-header-left {
   display: flex;
   align-items: center;
   gap: 11px;
 }
 
-.troy-avatar {
+.asst-avatar {
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #FF6F2C 0%, #F15D23 100%);
+  background: linear-gradient(135deg, #2F6FD6 0%, #0047AB 100%);
   display: grid;
   place-items: center;
   color: #ffffff;
   position: relative;
-  box-shadow: 0 4px 14px -3px rgba(241, 93, 35, 0.7);
+  box-shadow: 0 4px 14px -3px rgba(var(--accent-rgb), 0.7);
   flex: none;
 }
 
-.troy-avatar svg {
+.asst-avatar svg {
   width: 22px;
   height: 22px;
 }
 
-.troy-status-dot {
+.asst-status-dot {
   position: absolute;
   bottom: -2px;
   right: -2px;
   width: 10px;
   height: 10px;
-  background: #10B981;
-  border: 2px solid #181512;
+  background: #4D8BEA;
+  border: 2px solid #050505;
   border-radius: 50%;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+  box-shadow: 0 0 6px rgba(77, 139, 234, 0.8);
 }
 
-.troy-title-group {
+.asst-title-group {
   display: flex;
   flex-direction: column;
 }
 
-.troy-title {
+.asst-title {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 700;
@@ -236,12 +236,12 @@
   gap: 6px;
 }
 
-.troy-sparkle {
-  color: #F15D23;
+.asst-sparkle {
+  color: #7AA8F0;
   font-size: 13px;
 }
 
-.troy-subtitle {
+.asst-subtitle {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.65);
   display: flex;
@@ -249,21 +249,21 @@
   gap: 4px;
 }
 
-.troy-live-pill {
+.asst-live-pill {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #10B981;
+  background: #4D8BEA;
 }
 
-.troy-header-actions {
+.asst-header-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.troy-hbtn {
+.asst-hbtn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.8);
@@ -277,48 +277,48 @@
   padding: 0;
 }
 
-.troy-hbtn:hover {
-  background: rgba(241, 93, 35, 0.3);
+.asst-hbtn:hover {
+  background: rgba(0, 71, 171, 0.55);
   color: #ffffff;
-  border-color: rgba(241, 93, 35, 0.5);
+  border-color: rgba(77, 139, 234, 0.65);
 }
 
-.troy-hbtn svg {
+.asst-hbtn svg {
   width: 15px;
   height: 15px;
 }
 
 /* ── Messages Stream ── */
-.troy-messages {
+.asst-messages {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: var(--bg, #faf8f5);
+  background: var(--surface, #F6F8FB);
   scrollbar-width: thin;
 }
 
-.troy-messages::-webkit-scrollbar {
+.asst-messages::-webkit-scrollbar {
   width: 5px;
 }
 
-.troy-messages::-webkit-scrollbar-thumb {
+.asst-messages::-webkit-scrollbar-thumb {
   background: var(--line, rgba(0, 0, 0, 0.15));
   border-radius: 999px;
 }
 
 /* Message Bubble */
-.troy-msg {
+.asst-msg {
   display: flex;
   gap: 10px;
   align-items: flex-start;
   max-width: 92%;
-  animation: troy-msg-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: asst-msg-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes troy-msg-in {
+@keyframes asst-msg-in {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -329,16 +329,16 @@
   }
 }
 
-.troy-msg.user {
+.asst-msg.user {
   align-self: flex-end;
   flex-direction: row-reverse;
 }
 
-.troy-msg.bot {
+.asst-msg.bot {
   align-self: flex-start;
 }
 
-.troy-msg-bubble {
+.asst-msg-bubble {
   padding: 12px 15px;
   border-radius: 18px;
   font-size: 13.5px;
@@ -346,49 +346,49 @@
   word-break: break-word;
 }
 
-.troy-msg.user .troy-msg-bubble {
-  background: linear-gradient(135deg, #F15D23 0%, #E04810 100%);
+.asst-msg.user .asst-msg-bubble {
+  background: linear-gradient(135deg, #0047AB 0%, #00337D 100%);
   color: #ffffff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 4px 14px -3px rgba(241, 93, 35, 0.45);
+  box-shadow: 0 4px 14px -3px rgba(var(--accent-rgb), 0.45);
 }
 
-.troy-msg.bot .troy-msg-bubble {
+.asst-msg.bot .asst-msg-bubble {
   background: var(--card, #ffffff);
-  color: var(--ink, #1b1815);
+  color: var(--ink, #0A0A0A);
   border: 1px solid var(--line, rgba(0, 0, 0, 0.08));
   border-bottom-left-radius: 4px;
   box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.06);
 }
 
-.troy-msg-bubble strong {
+.asst-msg-bubble strong {
   color: inherit;
   font-weight: 700;
 }
 
-.troy-msg.bot .troy-msg-bubble code {
-  background: var(--orange-tint, rgba(241, 93, 35, 0.08));
-  color: var(--orange-deep, #D84315);
+.asst-msg.bot .asst-msg-bubble code {
+  background: var(--accent-tint, #EFF4FC);
+  color: var(--accent-deep, #00337D);
   padding: 2px 6px;
   border-radius: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
 }
 
-.troy-msg-time {
+.asst-msg-time {
   font-size: 10px;
-  color: var(--muted, #8e8880);
+  color: var(--muted, #646B76);
   margin-top: 4px;
   text-align: right;
   display: block;
 }
 
-.troy-msg.user .troy-msg-time {
+.asst-msg.user .asst-msg-time {
   color: rgba(255, 255, 255, 0.75);
 }
 
 /* Typing Indicator */
-.troy-typing {
+.asst-typing {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -399,23 +399,23 @@
   border-bottom-left-radius: 4px;
 }
 
-.troy-dot {
+.asst-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--orange, #F15D23);
-  animation: troy-dot-bounce 1.2s infinite ease-in-out;
+  background: var(--accent, #0047AB);
+  animation: asst-dot-bounce 1.2s infinite ease-in-out;
 }
 
-.troy-dot:nth-child(2) {
+.asst-dot:nth-child(2) {
   animation-delay: 0.2s;
 }
 
-.troy-dot:nth-child(3) {
+.asst-dot:nth-child(3) {
   animation-delay: 0.4s;
 }
 
-@keyframes troy-dot-bounce {
+@keyframes asst-dot-bounce {
   0%, 80%, 100% {
     transform: scale(0.6);
     opacity: 0.4;
@@ -427,22 +427,22 @@
 }
 
 /* ── Suggestion Chips ── */
-.troy-suggestions {
+.asst-suggestions {
   padding: 8px 14px 4px;
   display: flex;
   gap: 6px;
   overflow-x: auto;
   flex: none;
-  background: var(--bg, #faf8f5);
+  background: var(--surface, #F6F8FB);
   border-top: 1px solid var(--line, rgba(0, 0, 0, 0.06));
   scrollbar-width: none;
 }
 
-.troy-suggestions::-webkit-scrollbar {
+.asst-suggestions::-webkit-scrollbar {
   display: none;
 }
 
-.troy-chip {
+.asst-chip {
   padding: 6px 12px;
   background: var(--card, #ffffff);
   border: 1px solid var(--line, rgba(0, 0, 0, 0.1));
@@ -450,22 +450,22 @@
   font-size: 12px;
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-weight: 600;
-  color: var(--ink-2, #3c3630);
+  color: var(--ink-2, #2E333B);
   cursor: pointer;
   white-space: nowrap;
   flex: none;
   transition: all 0.16s ease;
 }
 
-.troy-chip:hover {
-  background: var(--orange-tint, rgba(241, 93, 35, 0.08));
-  border-color: var(--orange, #F15D23);
-  color: var(--orange-deep, #D84315);
+.asst-chip:hover {
+  background: var(--accent-tint, #EFF4FC);
+  border-color: var(--accent, #0047AB);
+  color: var(--accent-deep, #00337D);
   transform: translateY(-1px);
 }
 
 /* ── Input Bar ── */
-.troy-input-bar {
+.asst-input-bar {
   padding: 12px 14px;
   background: var(--card, #ffffff);
   border-top: 1px solid var(--line, rgba(0, 0, 0, 0.08));
@@ -475,30 +475,30 @@
   flex: none;
 }
 
-.troy-input {
+.asst-input {
   flex: 1;
-  background: var(--surface, #f4f1ed);
+  background: var(--surface, #F6F8FB);
   border: 1px solid var(--line, rgba(0, 0, 0, 0.1));
   border-radius: 999px;
   padding: 10px 16px;
   font-size: 13.5px;
   font-family: 'Inter', system-ui, sans-serif;
-  color: var(--ink, #1b1815);
+  color: var(--ink, #0A0A0A);
   outline: none;
   transition: border-color 0.18s, box-shadow 0.18s;
 }
 
-.troy-input:focus {
-  border-color: var(--orange, #F15D23);
-  box-shadow: 0 0 0 3px var(--orange-soft, rgba(241, 93, 35, 0.18));
+.asst-input:focus {
+  border-color: var(--accent, #0047AB);
+  box-shadow: 0 0 0 3px var(--accent-soft, #DCE7F8);
   background: var(--card, #ffffff);
 }
 
-.troy-send-btn {
+.asst-send-btn {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #FF6F2C 0%, #F15D23 100%);
+  background: linear-gradient(135deg, #2F6FD6 0%, #0047AB 100%);
   border: none;
   color: #ffffff;
   display: grid;
@@ -506,20 +506,20 @@
   cursor: pointer;
   flex: none;
   transition: transform 0.18s, opacity 0.18s, box-shadow 0.18s;
-  box-shadow: 0 4px 12px -2px rgba(241, 93, 35, 0.5);
+  box-shadow: 0 4px 12px -2px rgba(77, 139, 234, 0.65);
 }
 
-.troy-send-btn:hover:not(:disabled) {
+.asst-send-btn:hover:not(:disabled) {
   transform: scale(1.08) translateY(-1px);
-  box-shadow: 0 6px 16px -2px rgba(241, 93, 35, 0.7);
+  box-shadow: 0 6px 16px -2px rgba(var(--accent-rgb), 0.7);
 }
 
-.troy-send-btn:disabled {
+.asst-send-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.troy-send-btn svg {
+.asst-send-btn svg {
   width: 17px;
   height: 17px;
   margin-left: 2px;
@@ -527,26 +527,26 @@
 
 /* ── Mobile Responsiveness ── */
 @media (max-width: 640px) {
-  .troy-launcher-wrap {
+  .asst-launcher-wrap {
     bottom: 20px;
     right: 20px;
   }
 
-  .troy-btn {
+  .asst-btn {
     width: 52px;
     height: 52px;
   }
 
-  .troy-btn-icon {
+  .asst-btn-icon {
     width: 24px;
     height: 24px;
   }
 
-  .troy-tooltip {
+  .asst-tooltip {
     display: none; /* Hide hover tooltip on touch devices */
   }
 
-  .troy-window {
+  .asst-window {
     bottom: 82px;
     right: 16px;
     left: 16px;

@@ -16,5 +16,6 @@ const activitySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 activitySchema.index({ trainer: 1, day: 1, slot: 1 }, { unique: true });
+activitySchema.index({ day: 1, slot: 1 });       // availability looks up by period
 
 export default mongoose.model('Activity', activitySchema);

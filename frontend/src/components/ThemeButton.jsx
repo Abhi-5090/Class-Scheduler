@@ -2,13 +2,14 @@ import { useRef } from 'react';
 import { toggleTheme, currentTheme } from '../lib/theme.js';
 import { useState, useEffect } from 'react';
 
-export default function ThemeButton() {
+/* `surface` draws it for a light card or page instead of the dark hero band. */
+export default function ThemeButton({ surface = false }) {
   const ref = useRef(null);
   const [theme, setTheme] = useState(currentTheme);
 
   /* another tab may have flipped it */
   useEffect(() => {
-    const sync = e => { if (e.key === 'torii-theme' && e.newValue) setTheme(e.newValue); };
+    const sync = e => { if (e.key === 'cs-theme' && e.newValue) setTheme(e.newValue); };
     addEventListener('storage', sync);
     return () => removeEventListener('storage', sync);
   }, []);
@@ -16,7 +17,7 @@ export default function ThemeButton() {
   return (
     <button
       ref={ref}
-      className="theme-btn"
+      className={surface ? 'theme-btn on-surface' : 'theme-btn'}
       type="button"
       aria-label="Toggle dark mode"
       onClick={() => toggleTheme(ref.current, setTheme)}

@@ -11,6 +11,10 @@ export default function TrainersTab() {
   const [batches, setBatches] = useState([]);
   const [scheduleData, setScheduleData] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [snapshot, setSnapshot] = useState('');   // the form as opened, to tell if it changed
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const open = draft => { setError(''); setEditing(draft); setSnapshot(JSON.stringify(draft)); };
   const [trackFilter, setTrackFilter] = useState('All');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
@@ -24,9 +28,10 @@ export default function TrainersTab() {
         api.schedule(),
       ]);
       setRows(t);
+      setLoadError('');
       setBatches(b);
       setScheduleData(s);
-    } catch (e) { setError(e.message); setRows([]); }
+    } catch (e) { setLoadError(e.message); }
   };
   useEffect(() => { reload(); }, []);
 
@@ -84,6 +89,8 @@ export default function TrainersTab() {
   };
 
   async function save() {
+    if (saving) return;                         // a second click while the first is in flight
+    setSaving(true);
     setError('');
     try {
       const body = {
@@ -100,6 +107,7 @@ export default function TrainersTab() {
       announceChange();
       flash(editing._id ? `Saved ${editing.name}` : `Added ${editing.name}`);
     } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
   async function remove(t) {
@@ -117,7 +125,16 @@ export default function TrainersTab() {
     } catch (e) { setError(e.message); }
   }
 
-  if (!rows) return <><PageHead title="Trainers" /><Spinner /></>;
+  if (!rows) {
+    return (
+      <>
+        <PageHead title="Trainers" />
+        {loadError
+          ? <><Notice error={`Could not load: ${loadError}`} /><button className="btn btn-ghost" onClick={() => { setLoadError(''); reload(); }}>Try again</button></>
+          : <Spinner />}
+      </>
+    );
+  }
 
   return (
     <>
@@ -139,16 +156,16 @@ export default function TrainersTab() {
           </svg>
           {exporting ? 'Generating PDF…' : 'Download Trainer Schedules (PDF)'}
         </button>
-        <button className="btn btn-primary" onClick={() => setEditing({ ...blank })}>+ New trainer</button>
+        <button className="btn btn-primary" onClick={() => open({ ...blank })}>+ New trainer</button>
       </PageHead>
 
-      <Notice error={error} ok={ok} />
+      <Notice error={error || (loadError && `Could not refresh: ${loadError}`)} ok={ok} />
 
       <div className="card">
         {!rows.length ? (
           <EmptyState
             title="No trainers yet"
-            action={<button className="btn btn-primary" onClick={() => setEditing({ ...blank })}>+ New trainer</button>}
+            action={<button className="btn btn-primary" onClick={() => open({ ...blank })}>+ New trainer</button>}
           >
             Add the mentors first, then assign them to batch sessions.
           </EmptyState>
@@ -196,7 +213,7 @@ export default function TrainersTab() {
                     <tr key={t._id}>
                       <td className="nm">{t.name}</td>
                       <td>
-                        <span className={`pill-tag ${isNonTeaching ? 'purple' : 'orange'}`}>
+                        <span className={`pill-tag ${isNonTeaching ? 'alt' : 'accent'}`}>
                           {isNonTeaching ? 'Non-Teaching' : 'Teaching'}
                         </span>
                       </td>
@@ -211,7 +228,7 @@ export default function TrainersTab() {
                             {!!main && <span className="pill-tag">{main} main</span>}
                             {!!support && <span className="pill-tag grey">{support} support</span>}
                             {!!other && (
-                              <span className="pill-tag" style={{ background: 'var(--orange-tint)', color: 'var(--orange-deep)', borderColor: 'var(--orange-soft)' }} title={taskNames}>
+                              <span className="pill-tag" style={{ background: 'var(--accent-tint)', color: 'var(--accent-deep)', borderColor: 'var(--accent-soft)' }} title={taskNames}>
                                 {other} assigned
                               </span>
                             )}
@@ -228,7 +245,7 @@ export default function TrainersTab() {
                         >
                           PDF
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ ...t, track: (t.track === 'non-teaching' || t.track === 'non-technical') ? 'non-teaching' : 'teaching' })}>Edit</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => open({ ...t, track: (t.track === 'non-teaching' || t.track === 'non-technical') ? 'non-teaching' : 'teaching' })}>Edit</button>
                         <button className="btn btn-danger btn-sm" onClick={() => remove(t)}>Delete</button>
                       </td>
                     </tr>
@@ -244,10 +261,11 @@ export default function TrainersTab() {
         <Modal
           title={editing._id ? `Edit ${editing.name}` : 'New trainer'}
           onClose={() => setEditing(null)}
+          dirty={JSON.stringify(editing) !== snapshot}
           footer={
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim()}>
+              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
                 {editing._id ? 'Save changes' : 'Add trainer'}
               </button>
             </>

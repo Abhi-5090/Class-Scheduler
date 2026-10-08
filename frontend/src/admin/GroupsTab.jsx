@@ -9,14 +9,19 @@ export default function GroupsTab() {
   const [rows, setRows] = useState(null);
   const [batches, setBatches] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [snapshot, setSnapshot] = useState('');   // the form as opened, to tell if it changed
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const open = draft => { setError(''); setEditing(draft); setSnapshot(JSON.stringify(draft)); };
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
 
   const reload = async () => {
     try {
       const [g, b] = await Promise.all([api.list('groups'), api.list('batches')]);
-      setRows(g); setBatches(b);
-    } catch (e) { setError(e.message); setRows([]); }
+      setRows(g);
+      setLoadError(''); setBatches(b);
+    } catch (e) { setLoadError(e.message); }
   };
   useEffect(() => { reload(); }, []);
 
@@ -24,6 +29,8 @@ export default function GroupsTab() {
   const held = name => batches.filter(b => b.group === name);
 
   async function save() {
+    if (saving) return;                         // a second click while the first is in flight
+    setSaving(true);
     setError('');
     try {
       const body = {
@@ -37,6 +44,7 @@ export default function GroupsTab() {
       announceChange();
       flash(editing._id ? `Saved ${editing.name}` : `Added ${editing.name}`);
     } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
   async function remove(g) {
@@ -65,7 +73,16 @@ export default function GroupsTab() {
     } catch (e) { setError(e.message); }
   }
 
-  if (!rows) return <><PageHead title="Year Groups" /><Spinner /></>;
+  if (!rows) {
+    return (
+      <>
+        <PageHead title="Year Groups" />
+        {loadError
+          ? <><Notice error={`Could not load: ${loadError}`} /><button className="btn btn-ghost" onClick={() => { setLoadError(''); reload(); }}>Try again</button></>
+          : <Spinner />}
+      </>
+    );
+  }
 
   const sorted = [...rows].sort((a, b) => a.order - b.order);
 
@@ -77,19 +94,19 @@ export default function GroupsTab() {
       >
         <button
           className="btn btn-primary"
-          onClick={() => setEditing({ ...blank, order: (Math.max(-1, ...rows.map(r => r.order)) + 1) })}
+          onClick={() => open({ ...blank, order: (Math.max(-1, ...rows.map(r => r.order)) + 1) })}
         >
           + New year group
         </button>
       </PageHead>
 
-      <Notice error={error} ok={ok} />
+      <Notice error={error || (loadError && `Could not refresh: ${loadError}`)} ok={ok} />
 
       <div className="card">
         {!sorted.length ? (
           <EmptyState
             title="No year groups yet"
-            action={<button className="btn btn-primary" onClick={() => setEditing({ ...blank })}>+ New year group</button>}
+            action={<button className="btn btn-primary" onClick={() => open({ ...blank })}>+ New year group</button>}
           >
             Batches belong to a year group, so add one before adding batches.
           </EmptyState>
@@ -114,7 +131,7 @@ export default function GroupsTab() {
                         : <span className="pill-tag">live</span>}
                     </td>
                     <td className="act">
-                      <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ ...g })}>Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => open({ ...g })}>Edit</button>
                       <button className="btn btn-danger btn-sm" onClick={() => remove(g)}>Delete</button>
                     </td>
                   </tr>
@@ -129,10 +146,11 @@ export default function GroupsTab() {
         <Modal
           title={editing._id ? `Edit ${editing.name}` : 'New year group'}
           onClose={() => setEditing(null)}
+          dirty={JSON.stringify(editing) !== snapshot}
           footer={
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim()}>
+              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
                 {editing._id ? 'Save changes' : 'Add year group'}
               </button>
             </>

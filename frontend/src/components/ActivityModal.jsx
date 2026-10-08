@@ -22,6 +22,7 @@ export default function ActivityModal({
   slots = [],
   lunchIndex = 3,
   current,
+  classSlots = {},
   onClose,
   onSaved,
 }) {
@@ -35,17 +36,43 @@ export default function ActivityModal({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  /* Periods this trainer teaches on the chosen day. They can't take a note:
+     a class always wins on the board, so it would be saved but never shown.
+     The API refuses them too; this keeps them from being picked at all. */
+  const locked = classSlots[selectedDay] || {};
+  const isLocked = i => locked[i] !== undefined;
+  const open = list => list.filter(i => !isLocked(i));
+  const skipped = list => list.filter(isLocked).length;
+  const [note, setNote] = useState('');
+  const pick = (list, from, to) => {
+    const kept = open(list);
+    setSelectedSlots(kept);
+    setFromSlot(from ?? kept[0] ?? 0);
+    setToSlot(to ?? kept[kept.length - 1] ?? 0);
+    const n = skipped(list);
+    setNote(n ? `${n} period${n > 1 ? 's' : ''} skipped — ${n > 1 ? "they're classes" : "it's a class"} for this trainer.` : '');
+  };
+
+  const changeDay = d => {
+    setSelectedDay(d);
+    const taught = classSlots[d] || {};
+    const kept = selectedSlots.filter(i => taught[i] === undefined);
+    setSelectedSlots(kept);
+    const n = selectedSlots.length - kept.length;
+    setNote(n ? `${n} period${n > 1 ? 's' : ''} dropped — ${n > 1 ? 'they are classes' : "it's a class"} on ${d}.` : '');
+  };
+
   const handleRangeChange = (newFrom, newTo) => {
-    setFromSlot(newFrom);
-    setToSlot(newTo);
     const min = Math.min(newFrom, newTo);
     const max = Math.max(newFrom, newTo);
     const range = [];
     for (let i = min; i <= max; i++) range.push(i);
-    setSelectedSlots(range);
+    pick(range, newFrom, newTo);
   };
 
   const toggleSlot = i => {
+    if (isLocked(i)) return;
+    setNote('');
     const next = selectedSlots.includes(i)
       ? selectedSlots.filter(s => s !== i)
       : [...selectedSlots, i].sort((a, b) => a - b);
@@ -57,26 +84,10 @@ export default function ActivityModal({
   };
 
   const selectPreset = (type) => {
-    if (type === 'all') {
-      const all = slots.map((_, i) => i);
-      setSelectedSlots(all);
-      setFromSlot(0);
-      setToSlot(slots.length - 1);
-    } else if (type === 'morning') {
-      const morn = slots.map((_, i) => i).filter(i => i < lunchIndex);
-      setSelectedSlots(morn);
-      if (morn.length) {
-        setFromSlot(morn[0]);
-        setToSlot(morn[morn.length - 1]);
-      }
-    } else if (type === 'afternoon') {
-      const aft = slots.map((_, i) => i).filter(i => i > lunchIndex);
-      setSelectedSlots(aft);
-      if (aft.length) {
-        setFromSlot(aft[0]);
-        setToSlot(aft[aft.length - 1]);
-      }
-    }
+    const all = slots.map((_, i) => i);
+    if (type === 'all') pick(all);
+    else if (type === 'morning') pick(all.filter(i => i < lunchIndex));
+    else if (type === 'afternoon') pick(all.filter(i => i > lunchIndex));
   };
 
   async function save() {
@@ -84,15 +95,21 @@ export default function ActivityModal({
     if (kind === 'other' && !label.trim()) { setError("Say what work is assigned."); return; }
     setBusy(true); setError('');
     try {
-      await api.setActivity({
+      const r = await api.setActivity({
         trainer: trainerName,
         day: selectedDay,
         slots: selectedSlots,
         kind,
         label: kind === 'lunch' ? '' : label.trim(),
       });
-      await onSaved();
+      /* the API answers with what it read back from the database; anything
+         short of every picked period means the save did not fully land */
+      if (r?.count !== selectedSlots.length) {
+        throw new Error(`Only ${r?.count ?? 0} of ${selectedSlots.length} periods were saved — please try again.`);
+      }
       onClose();
+      /* the save has landed; a failed reload just means the board is a beat behind */
+      await Promise.resolve(onSaved()).catch(() => {});
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -106,8 +123,8 @@ export default function ActivityModal({
         day: selectedDay,
         slots: selectedSlots,
       });
-      await onSaved();
       onClose();
+      await Promise.resolve(onSaved()).catch(() => {});
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -139,7 +156,7 @@ export default function ActivityModal({
 
       <div className="sess-grid" style={{ marginBottom: 14 }}>
         <Field label="Teaching Day">
-          <select value={selectedDay} onChange={e => setSelectedDay(e.target.value)}>
+          <select value={selectedDay} onChange={e => changeDay(e.target.value)}>
             {(days.length ? days : [day]).map(d => (
               <option key={d} value={d}>{d}</option>
             ))}
@@ -192,13 +209,16 @@ export default function ActivityModal({
             <button
               key={i}
               type="button"
-              className={`${selectedSlots.includes(i) ? 'on' : ''} ${i === lunchIndex ? 'lunchy' : ''}`}
+              className={`${selectedSlots.includes(i) ? 'on' : ''} ${i === lunchIndex ? 'lunchy' : ''} ${isLocked(i) ? 'locked' : ''}`}
               onClick={() => toggleSlot(i)}
+              disabled={isLocked(i)}
+              title={isLocked(i) ? `Class: ${locked[i]} — change it in Batches & Sessions` : undefined}
             >
-              {i + 1}<span className="t">{s}</span>
+              {i + 1}<span className="t">{isLocked(i) ? 'Class' : s}</span>
             </button>
           ))}
         </div>
+        {note && <div className="activity-note">{note}</div>}
       </Field>
 
       <Field label="Assignment Type">

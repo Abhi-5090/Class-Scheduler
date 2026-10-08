@@ -1,10 +1,13 @@
 import { calculateUniqueStudents } from '../lib/studentStats.js';
 
 export default function Stats({ data }) {
-  const students = calculateUniqueStudents(data.batches);
+  /* "active" means running today — finished and not-yet-started batches are
+     on the calendar but not in this week's numbers */
+  const active = data.batches.filter(b => !b.status || b.status === 'current');
+  const students = data.uniqueStudents ?? calculateUniqueStudents(active);
   const cells = [
     ['', data.trainers.length, 'Trainers'],
-    ['dark', data.batches.length, 'Active Batches'],
+    ['dark', active.length, 'Active Batches'],
     ['', data.venues.length, 'Training Halls'],
     ['dark', students.toLocaleString(), 'Students'],
     ['', data.days.length, 'Teaching Days'],

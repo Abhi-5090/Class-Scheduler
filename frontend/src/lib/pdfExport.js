@@ -3,12 +3,12 @@ import autoTable from 'jspdf-autotable';
 import { abbreviateVenue } from './abbreviate.js';
 import { calculateUniqueStudents } from './studentStats.js';
 
-const BRAND_ORANGE = [241, 93, 35];     // #F15D23
-const DARK_INK = [26, 22, 19];          // #1A1613
-const MUTED_INK = [102, 94, 88];       // #665E58
-const ACCENT_BG = [255, 244, 238];      // #FFF4EE
-const LINE_BORDER = [228, 220, 212];    // #E4DCD4
-const LIGHT_GREY = [247, 246, 244];
+const BRAND_ACCENT = [0, 71, 171];      // #0047AB cobalt
+const DARK_INK = [10, 10, 10];          // #0A0A0A
+const MUTED_INK = [100, 107, 118];     // #646B76
+const ACCENT_BG = [239, 244, 252];      // #EFF4FC
+const LINE_BORDER = [226, 231, 239];    // #E2E7EF
+const LIGHT_GREY = [246, 248, 251];
 
 function addDocHeader(doc, title, subtitle) {
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -17,19 +17,19 @@ function addDocHeader(doc, title, subtitle) {
   doc.setFillColor(...DARK_INK);
   doc.rect(0, 0, pageWidth, 24, 'F');
 
-  // Orange accent strip
-  doc.setFillColor(...BRAND_ORANGE);
+  // Cobalt accent strip
+  doc.setFillColor(...BRAND_ACCENT);
   doc.rect(0, 24, pageWidth, 2.5, 'F');
 
   // Title & subtitle text
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text('TORII MINDS · NCET TRAINING MANAGEMENT', 14, 12);
+  doc.text('CLASS SCHEDULER · NCET TRAINING MANAGEMENT', 14, 12);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.setTextColor(240, 180, 158);
+  doc.setTextColor(169, 196, 238);
   doc.text(subtitle || 'Weekly Training & Workload Report', 14, 19);
 
   // Document title below header banner
@@ -62,7 +62,7 @@ function addDocFooter(doc) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...MUTED_INK);
-    doc.text('Torii — Step IN Stand OUT  |  Nagarjuna College of Engineering & Technology', 14, pageHeight - 7);
+    doc.text('Class Scheduler  |  Nagarjuna College of Engineering & Technology', 14, pageHeight - 7);
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 7, { align: 'right' });
   }
 }
@@ -159,7 +159,7 @@ export function exportBatchesPDF(data) {
     ]],
     didParseCell: (dataCell) => {
       dataCell.cell.styles.fillColor = ACCENT_BG;
-      dataCell.cell.styles.textColor = BRAND_ORANGE;
+      dataCell.cell.styles.textColor = BRAND_ACCENT;
       dataCell.cell.styles.fontStyle = 'bold';
       dataCell.cell.styles.halign = 'center';
     },
@@ -175,7 +175,7 @@ export function exportBatchesPDF(data) {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.setTextColor(...BRAND_ORANGE);
+    doc.setTextColor(...BRAND_ACCENT);
     doc.text(`${group.group} (${group.batches.length} ${group.batches.length > 1 ? 'Batches' : 'Batch'})`, 14, currentY);
 
     const rows = [];
@@ -234,7 +234,7 @@ export function exportBatchesPDF(data) {
   }
 
   addDocFooter(doc);
-  doc.save('Torii_Batches_Schedule.pdf');
+  doc.save('Class_Scheduler_Batches_Schedule.pdf');
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ export function exportTrainerPDF(trainer, config) {
     bodyRows.push([{
       content: `ASSIGNED ACADEMIC TRAININGS & VENUES:\n${bulletList}`,
       colSpan: 4,
-      styles: { fontStyle: 'bold', textColor: [184, 56, 14], fillColor: [255, 248, 244], cellPadding: 3, lineHeightFactor: 1.35 },
+      styles: { fontStyle: 'bold', textColor: [0, 42, 102], fillColor: [246, 248, 251], cellPadding: 3, lineHeightFactor: 1.35 },
     }]);
   }
 
@@ -285,7 +285,7 @@ export function exportTrainerPDF(trainer, config) {
     bodyRows.push([{
       content: `OTHER ASSIGNED WORK & SPECIAL DUTIES:\n${otherBullets}`,
       colSpan: 4,
-      styles: { fontStyle: 'bold', textColor: [30, 64, 120], fillColor: [244, 248, 254], cellPadding: 3, lineHeightFactor: 1.35 },
+      styles: { fontStyle: 'bold', textColor: [46, 51, 59], fillColor: [237, 241, 246], cellPadding: 3, lineHeightFactor: 1.35 },
     }]);
   }
 
@@ -298,7 +298,7 @@ export function exportTrainerPDF(trainer, config) {
     didParseCell: (dataCell) => {
       if (dataCell.row.index === 0) {
         dataCell.cell.styles.fillColor = ACCENT_BG;
-        dataCell.cell.styles.textColor = BRAND_ORANGE;
+        dataCell.cell.styles.textColor = BRAND_ACCENT;
         dataCell.cell.styles.fontStyle = 'bold';
         dataCell.cell.styles.halign = 'center';
       }
@@ -360,29 +360,29 @@ export function exportTrainerPDF(trainer, config) {
       if (dataCell.section === 'body' && dataCell.column.index > 0) {
         const text = String(dataCell.cell.raw || '');
         if (text.includes('[MAIN MENTOR]')) {
-          dataCell.cell.styles.fillColor = [254, 237, 230];
-          dataCell.cell.styles.textColor = [184, 56, 14];
+          dataCell.cell.styles.fillColor = [220, 231, 248];
+          dataCell.cell.styles.textColor = [0, 42, 102];
           dataCell.cell.styles.fontStyle = 'bold';
         } else if (text.includes('[SUPPORT]')) {
-          dataCell.cell.styles.fillColor = [255, 245, 240];
-          dataCell.cell.styles.textColor = [196, 88, 50];
+          dataCell.cell.styles.fillColor = [239, 244, 252];
+          dataCell.cell.styles.textColor = [0, 51, 125];
         } else if (text.includes('[ASSIGNED]')) {
-          dataCell.cell.styles.fillColor = [240, 244, 250];
-          dataCell.cell.styles.textColor = [30, 64, 120];
+          dataCell.cell.styles.fillColor = [237, 241, 246];
+          dataCell.cell.styles.textColor = [46, 51, 59];
           dataCell.cell.styles.fontStyle = 'bold';
         } else if (text === 'Lunch Break') {
-          dataCell.cell.styles.fillColor = [250, 248, 245];
-          dataCell.cell.styles.textColor = [140, 130, 120];
+          dataCell.cell.styles.fillColor = [246, 248, 251];
+          dataCell.cell.styles.textColor = [100, 107, 118];
         } else if (text === 'Free') {
           dataCell.cell.styles.fillColor = [255, 255, 255];
-          dataCell.cell.styles.textColor = [160, 150, 140];
+          dataCell.cell.styles.textColor = [163, 172, 185];
         }
       }
     },
   });
 
   addDocFooter(doc);
-  doc.save(`Torii_Trainer_${trainer.name.replace(/\s+/g, '_')}_Schedule.pdf`);
+  doc.save(`Class_Scheduler_Trainer_${trainer.name.replace(/\s+/g, '_')}_Schedule.pdf`);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -454,18 +454,18 @@ export function exportAllTrainersPDF(scheduleData) {
       0: { halign: 'center', cellWidth: 8 },
       1: { fontStyle: 'bold', cellWidth: 32 },
       2: { halign: 'center', cellWidth: 22, fontStyle: 'bold' },
-      3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [184, 56, 14] },
+      3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [0, 42, 102] },
       4: { cellWidth: 86 },
       5: { cellWidth: 42 },
-      6: { fontStyle: 'bold', halign: 'center', cellWidth: 22, textColor: BRAND_ORANGE },
+      6: { fontStyle: 'bold', halign: 'center', cellWidth: 22, textColor: BRAND_ACCENT },
       7: { halign: 'center', cellWidth: 18 },
     },
     didParseCell: (dataCell) => {
       if (dataCell.section === 'body' && dataCell.column.index === 2) {
         if (dataCell.cell.raw === 'Non-Teaching' || dataCell.cell.raw === 'Non-Tech') {
-          dataCell.cell.styles.textColor = [79, 70, 229]; // indigo
+          dataCell.cell.styles.textColor = [10, 10, 10]; // non-teaching: ink
         } else {
-          dataCell.cell.styles.textColor = [184, 56, 14]; // orange
+          dataCell.cell.styles.textColor = [0, 42, 102]; // teaching: cobalt
         }
       }
     },
@@ -506,7 +506,7 @@ export function exportAllTrainersPDF(scheduleData) {
       bodyRows.push([{
         content: `ASSIGNED ACADEMIC TRAININGS & VENUES:\n${bulletList}`,
         colSpan: 4,
-        styles: { fontStyle: 'bold', textColor: [184, 56, 14], fillColor: [255, 248, 244], cellPadding: 3, lineHeightFactor: 1.35 },
+        styles: { fontStyle: 'bold', textColor: [0, 42, 102], fillColor: [246, 248, 251], cellPadding: 3, lineHeightFactor: 1.35 },
       }]);
     }
 
@@ -519,7 +519,7 @@ export function exportAllTrainersPDF(scheduleData) {
       bodyRows.push([{
         content: `OTHER ASSIGNED WORK & SPECIAL DUTIES:\n${otherBullets}`,
         colSpan: 4,
-        styles: { fontStyle: 'bold', textColor: [30, 64, 120], fillColor: [244, 248, 254], cellPadding: 3, lineHeightFactor: 1.35 },
+        styles: { fontStyle: 'bold', textColor: [46, 51, 59], fillColor: [237, 241, 246], cellPadding: 3, lineHeightFactor: 1.35 },
       }]);
     }
 
@@ -532,7 +532,7 @@ export function exportAllTrainersPDF(scheduleData) {
       didParseCell: (dataCell) => {
         if (dataCell.row.index === 0) {
           dataCell.cell.styles.fillColor = ACCENT_BG;
-          dataCell.cell.styles.textColor = BRAND_ORANGE;
+          dataCell.cell.styles.textColor = BRAND_ACCENT;
           dataCell.cell.styles.fontStyle = 'bold';
           dataCell.cell.styles.halign = 'center';
         }
@@ -593,22 +593,22 @@ export function exportAllTrainersPDF(scheduleData) {
         if (dataCell.section === 'body' && dataCell.column.index > 0) {
           const text = String(dataCell.cell.raw || '');
           if (text.includes('[MAIN MENTOR]')) {
-            dataCell.cell.styles.fillColor = [254, 237, 230];
-            dataCell.cell.styles.textColor = [184, 56, 14];
+            dataCell.cell.styles.fillColor = [220, 231, 248];
+            dataCell.cell.styles.textColor = [0, 42, 102];
             dataCell.cell.styles.fontStyle = 'bold';
           } else if (text.includes('[SUPPORT]')) {
-            dataCell.cell.styles.fillColor = [255, 245, 240];
-            dataCell.cell.styles.textColor = [196, 88, 50];
+            dataCell.cell.styles.fillColor = [239, 244, 252];
+            dataCell.cell.styles.textColor = [0, 51, 125];
           } else if (text.includes('[ASSIGNED]')) {
-            dataCell.cell.styles.fillColor = [240, 244, 250];
-            dataCell.cell.styles.textColor = [30, 64, 120];
+            dataCell.cell.styles.fillColor = [237, 241, 246];
+            dataCell.cell.styles.textColor = [46, 51, 59];
             dataCell.cell.styles.fontStyle = 'bold';
           } else if (text === 'Lunch Break') {
-            dataCell.cell.styles.fillColor = [250, 248, 245];
-            dataCell.cell.styles.textColor = [140, 130, 120];
+            dataCell.cell.styles.fillColor = [246, 248, 251];
+            dataCell.cell.styles.textColor = [100, 107, 118];
           } else if (text === 'Free') {
             dataCell.cell.styles.fillColor = [255, 255, 255];
-            dataCell.cell.styles.textColor = [160, 150, 140];
+            dataCell.cell.styles.textColor = [163, 172, 185];
           }
         }
       },
@@ -616,7 +616,7 @@ export function exportAllTrainersPDF(scheduleData) {
   }
 
   addDocFooter(doc);
-  doc.save('Torii_Consolidated_Trainers_Schedule.pdf');
+  doc.save('Class_Scheduler_Consolidated_Trainers_Schedule.pdf');
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -674,7 +674,7 @@ export function exportDayPDF(data, dayName) {
     ]],
     didParseCell: (dataCell) => {
       dataCell.cell.styles.fillColor = ACCENT_BG;
-      dataCell.cell.styles.textColor = BRAND_ORANGE;
+      dataCell.cell.styles.textColor = BRAND_ACCENT;
       dataCell.cell.styles.fontStyle = 'bold';
       dataCell.cell.styles.halign = 'center';
     },
@@ -724,7 +724,7 @@ export function exportDayPDF(data, dayName) {
   }
 
   addDocFooter(doc);
-  doc.save(`Torii_Schedule_${dayName}.pdf`);
+  doc.save(`Class_Scheduler_Schedule_${dayName}.pdf`);
 }
 
 /**
@@ -760,10 +760,12 @@ export function exportMonthCalendarPDF(schedule, year, monthIndex, filterGroup =
     const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const dateObj = new Date(year, monthIndex, d);
     const dayOfWeek = weekdays[(dateObj.getDay() + 6) % 7];
+    /* only the configured teaching days run classes — same rule as the on-screen calendar */
+    const teaching = !(schedule.days || []).length || schedule.days.includes(dayOfWeek);
 
     // Find active classes on this date
     const dayClasses = [];
-    for (const b of schedule.batches || []) {
+    for (const b of teaching ? schedule.batches || [] : []) {
       if (filterGroup !== 'All' && b.group !== filterGroup) continue;
 
       // Check tentative date window
@@ -843,10 +845,10 @@ export function exportMonthCalendarPDF(schedule, year, monthIndex, filterGroup =
     doc.setDrawColor(...LINE_BORDER);
     doc.roundedRect(x, statsY, cardW, 13, 1.5, 1.5, 'FD');
 
-    doc.setFillColor(...BRAND_ORANGE);
+    doc.setFillColor(...BRAND_ACCENT);
     doc.rect(x, statsY, 1.5, 13, 'F');
 
-    doc.setTextColor(...BRAND_ORANGE);
+    doc.setTextColor(...BRAND_ACCENT);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text(val, x + 4, statsY + 5.5);
@@ -902,7 +904,7 @@ export function exportMonthCalendarPDF(schedule, year, monthIndex, filterGroup =
   }
 
   addDocFooter(doc);
-  doc.save(`Torii_Monthly_Schedule_${monthName}_${year}.pdf`);
+  doc.save(`Class_Scheduler_Monthly_Schedule_${monthName}_${year}.pdf`);
 }
 
 

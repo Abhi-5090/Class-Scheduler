@@ -70,7 +70,7 @@ export default function Board({ admin }) {
 
   /* The console and the login screen retitle the tab, so the board has to
      claim it back when you navigate here from either of them. */
-  useEffect(() => { document.title = 'Torii · NCET Training Dashboard'; }, []);
+  useEffect(() => { document.title = 'Class Scheduler · NCET Training Schedule'; }, []);
 
   const hold = (msg, ms) => {
     setDwellMsg(msg);
@@ -276,9 +276,9 @@ export default function Board({ admin }) {
 
       <footer>
         <span>
-          Built from <b>Torii Schedule</b> · <span className="tag-orange">Torii — Step IN Stand OUT</span>
+          <b>Class Scheduler</b> · <span className="tag-accent">NCET Training Schedule</span>
         </span>
-        <span>{data.trainers.length} trainers · {data.batches.length} batches · {data.venues.length} halls</span>
+        <span>{data.trainers.length} trainers · {data.batches.filter(b => !b.status || b.status === 'current').length} active batches · {data.venues.length} halls</span>
       </footer>
     </div>
   );
@@ -333,7 +333,9 @@ function ScheduleView({ data, dayFilter }) {
   const host = useRef(null);
   useEffect(() => reveal(host.current), [data, dayFilter]);
 
-  const matches = day => dayFilter === 'All' || day.toLowerCase().includes(dayFilter.toLowerCase());
+  /* a row may stand for a run of days ("Monday – Wednesday"), so match on the
+     day positions it covers, not on the words in its label */
+  const matches = row => dayFilter === 'All' || (row.dayIndexes || []).some(i => data.days[i] === dayFilter);
 
   return (
     <div ref={host}>
@@ -349,6 +351,8 @@ function ScheduleView({ data, dayFilter }) {
           </div>
         </div>
       ))}
+
+      {!!data.offBoard?.length && <OffBoard list={data.offBoard} />}
 
       {data.upcoming.map(u => (
         <div className="group rv" key={u.group}>
@@ -384,6 +388,12 @@ const VENUE_LEGEND = (
 );
 
 const initials = n => n.slice(0, 2).toUpperCase();
+
+/* day → { slotIndex: batch } for every period the trainer teaches, so the
+   activity editor can lock them: a class always wins on the board. */
+const classSlotsOf = (t, days) => Object.fromEntries(days.map(d => [d, Object.fromEntries(
+  (t?.roles?.[d] || []).flatMap((r, i) => (r === 'main' || r === 'support' ? [[i, t.grid[d][i]]] : [])),
+)]));
 
 function TrainerView({ data, query, trackFilter = 'teaching', admin, refresh }) {
   const host = useRef(null);
@@ -458,6 +468,7 @@ function TrainerView({ data, query, trackFilter = 'teaching', admin, refresh }) 
           slots={data.slots}
           lunchIndex={data.lunchIndex}
           current={editing.current}
+          classSlots={classSlotsOf(data.trainers.find(x => x.name === editing.trainerName), data.days)}
           onClose={() => setEditing(null)}
           onSaved={refresh}
         />
@@ -491,6 +502,25 @@ function VenueView({ data }) {
           </article>
         );
       })}
+    </div>
+  );
+}
+
+/* Batches outside their dates aren't on this week's board; say which and why,
+   so a missing batch never looks like lost data. */
+const fmt = d => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+function OffBoard({ list }) {
+  const upcoming = list.filter(b => b.status === 'upcoming').sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const ended = list.filter(b => b.status === 'ended').sort((a, b) => b.endDate.localeCompare(a.endDate));
+  return (
+    <div className="offboard rv">
+      {!!upcoming.length && (
+        <p><b>Starting later</b> — {upcoming.map(b => `${b.name} (from ${fmt(b.startDate)})`).join(' · ')}</p>
+      )}
+      {!!ended.length && (
+        <p><b>Finished</b> — {ended.map(b => `${b.name} (ended ${fmt(b.endDate)})`).join(' · ')}</p>
+      )}
+      <p className="offboard-hint">These appear on the Monthly Calendar for their dates.</p>
     </div>
   );
 }

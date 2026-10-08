@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, createElement } from 'react';
-import { api } from './api.js';
+import { api, AUTH_EXPIRED } from './api.js';
 
 const Ctx = createContext(null);
 
@@ -8,6 +8,8 @@ const Ctx = createContext(null);
 export function AdminProvider({ children }) {
   const [admin, setAdmin] = useState(null);
   const [ready, setReady] = useState(false);
+  /* set when a signed-in session dies mid-use, so the login page can say why */
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
     api.me()
@@ -16,11 +18,19 @@ export function AdminProvider({ children }) {
       .finally(() => setReady(true));
   }, []);
 
+  useEffect(() => {
+    const onExpired = () => setAdmin(a => { if (a) setExpired(true); return null; });
+    addEventListener(AUTH_EXPIRED, onExpired);
+    return () => removeEventListener(AUTH_EXPIRED, onExpired);
+  }, []);
+
   const value = {
     admin,
     ready,
+    expired,
     signIn: async (email, password) => {
       const r = await api.login(email, password);
+      setExpired(false);
       setAdmin(r.admin);
       return r.admin;
     },

@@ -1,5 +1,5 @@
 /**
- * Troy RAG AI Schedule Assistant
+ * RAG Schedule Assistant
  * Professional, institutional schedule intelligence engine.
  * Delivers clear, structured, and accurate responses directly from the live database.
  */
@@ -32,6 +32,13 @@ function hasAny(q, ...keywords) {
   });
 }
 
+/* Does a row cover `day`? A row can stand for a run ("Monday – Wednesday"),
+   so it is matched on the day positions it spans, not the words in its label. */
+function covers(r, day, days = []) {
+  if (Array.isArray(r.dayIndexes)) return r.dayIndexes.some(i => days[i] === day);
+  return String(r.day || '').toLowerCase().includes(String(day).toLowerCase());
+}
+
 // ── Temporal Extractors ──
 function extractDay(q, days = []) {
   const nq = norm(q);
@@ -49,8 +56,9 @@ function extractDay(q, days = []) {
     const jsDay = new Date().getDay(); // 0 = Sun, 1 = Mon...
     const map = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const current = map[jsDay];
-    if (days.includes(current)) return current;
-    return days[0] || 'Monday';
+    /* a non-teaching day is still the answer — "no classes on Sunday" —
+       rather than quietly substituting the first teaching day */
+    return current;
   }
 
   if (/\b(tomorrow|tomorrows)\b/i.test(nq)) {
@@ -116,7 +124,11 @@ function extractMonth(q) {
   for (const m of monthMap) {
     for (const pat of m.patterns) {
       if (new RegExp(`\\b${pat}\\b`, 'i').test(nq)) {
-        return { index: m.index, name: m.name, year: 2026 };
+        /* a bare month name means its next occurrence within the academic
+           year: more than ~4 months back reads as next year's */
+        const now = new Date();
+        const year = m.index < now.getMonth() - 4 ? now.getFullYear() + 1 : now.getFullYear();
+        return { index: m.index, name: m.name, year };
       }
     }
   }
@@ -187,7 +199,7 @@ function buildKnowledgeBase(scheduleData) {
 }
 
 /**
- * Main Troy RAG Question Answering System
+ * Main RAG Question Answering System
  */
 export function answerScheduleQuery(userQuery, scheduleData) {
   if (!scheduleData) {
@@ -205,7 +217,8 @@ export function answerScheduleQuery(userQuery, scheduleData) {
 
   const trainers = scheduleData.trainers || [];
   const venues = scheduleData.venues || [];
-  const batches = scheduleData.batches || [];
+  /* weekly questions are about what is running now, not finished or future batches */
+  const batches = (scheduleData.batches || []).filter(b => !b.status || b.status === 'current');
   const groups = scheduleData.groups || [];
   const upcoming = scheduleData.upcoming || [];
   const conflicts = scheduleData.conflicts || [];
@@ -218,25 +231,27 @@ export function answerScheduleQuery(userQuery, scheduleData) {
 
   // ── 1. GREETINGS & SYSTEM OVERVIEW ──
   if (/^(hi|hello|hey|greetings|hola|namaste|yo|good\s*(morning|afternoon|evening))\b/i.test(nq)) {
-    return `Hello. I am **Troy**, the live Schedule Assistant for **Torii Training Management**.\n\nDatabase status: **${batches.length} Batches**, **${trainers.length} Trainers**, and **${venues.length} Venues** active.\n\n**Example queries:**\n- 📅 *"Show today's schedule"* or *"Monday timetable"*\n- 🗓️ *"What is the schedule for September?"* or *"October schedule"*\n- 🟢 *"Who is free today?"* or *"Who is free on Friday slot 2?"*\n- 👨‍🏫 *"Who are the teaching trainers?"* or *"Who are the non-teaching trainers?"*\n- 🎓 *"When is Batch 1 class?"*\n- 🏢 *"Which halls are available on Wednesday?"*`;
+    return `Hello. I am the live **Schedule Assistant** for **Class Scheduler**.\n\nDatabase status: **${batches.length} Batches**, **${trainers.length} Trainers**, and **${venues.length} Venues** active.\n\n**Example queries:**\n- 📅 *"Show today's schedule"* or *"Monday timetable"*\n- 🗓️ *"What is the schedule for September?"* or *"October schedule"*\n- 🟢 *"Who is free today?"* or *"Who is free on Friday slot 2?"*\n- 👨‍🏫 *"Who are the teaching trainers?"* or *"Who are the non-teaching trainers?"*\n- 🎓 *"When is Batch 1 class?"*\n- 🏢 *"Which halls are available on Wednesday?"*`;
   }
 
-  if (hasAny(nq, 'who are you', 'what are you', 'your name', 'about you', 'who is troy')) {
-    return `I am **Troy**, the AI assistant for the **Torii Training Schedule Management System** at NCET.\n\nI provide real-time schedule information directly from the database for:\n- 🗓️ **Monthly Calendar & Tentative Training Dates**\n- 📅 **Batch Timetables & Venues**\n- 👨‍🏫 **Teaching & Non-Teaching Faculty**\n- 🟢 **Trainer Availability & Free Periods**\n- 🏛️ **Venue Occupancy & Room Allocations**\n- ⏰ **Campus Period Timings & Breaks**`;
+  if (hasAny(nq, 'who are you', 'what are you', 'your name', 'about you')) {
+    return `I am the **Schedule Assistant** for **Class Scheduler** at NCET.\n\nI provide real-time schedule information directly from the database for:\n- 🗓️ **Monthly Calendar & Tentative Training Dates**\n- 📅 **Batch Timetables & Venues**\n- 👨‍🏫 **Teaching & Non-Teaching Faculty**\n- 🟢 **Trainer Availability & Free Periods**\n- 🏛️ **Venue Occupancy & Room Allocations**\n- ⏰ **Campus Period Timings & Breaks**`;
   }
 
   // ── 1.2 MONTHLY CALENDAR & TENTATIVE SCHEDULE QUERIES ──
   const isCalendarQuery = !!targetMonth || hasAny(nq, 'calendar schedule', 'monthly calendar', 'month calendar', 'month schedule', 'tentative dates', 'training dates');
   if (isCalendarQuery) {
     const mIdx = targetMonth ? targetMonth.index : (new Date().getMonth());
-    const mName = targetMonth ? targetMonth.name : 'September';
-    const mYear = targetMonth?.year || 2026;
+    const now = new Date();
+    const mName = targetMonth ? targetMonth.name : now.toLocaleDateString('en-US', { month: 'long' });
+    const mYear = targetMonth?.year || now.getFullYear();
 
     const mStart = `${mYear}-${String(mIdx + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(mYear, mIdx + 1, 0).getDate();
     const mEnd = `${mYear}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    const activeBatchesInMonth = batches.filter(b => {
+    /* a month question spans past and future batches too, so use the full list */
+    const activeBatchesInMonth = (scheduleData.batches || []).filter(b => {
       if (!b.startDate && !b.endDate) return true;
       if (b.startDate && b.startDate > mEnd) return false;
       if (b.endDate && b.endDate < mStart) return false;
@@ -295,7 +310,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
   if (hasAny(nq, 'who are the trainers', 'all trainers', 'list trainers', 'show trainers', 'faculty list', 'trainers list', 'who are trainers', 'show mentors')) {
     const teachingList = trainers.filter(t => (t.track || 'teaching') !== 'non-teaching' && t.track !== 'non-technical');
     const nonTeachingList = trainers.filter(t => t.track === 'non-teaching' || t.track === 'non-technical');
-    let res = `👨‍🏫 **Torii Faculty Directory (${trainers.length} Trainers)**\n\n`;
+    let res = `👨‍🏫 **Faculty Directory (${trainers.length} Trainers)**\n\n`;
     res += `💻 **Teaching Mentors (${teachingList.length}):**\n`;
     teachingList.forEach((t, i) => {
       res += `${i + 1}. **${t.name}** *(${t.totalTrainings || 0} weekly slots)*\n`;
@@ -449,7 +464,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
     const totalSessions = batches.reduce((acc, b) => acc + (b.rows || []).length, 0);
     const activeTrainers = trainers.filter(t => (t.totalTrainings || 0) > 0).length;
 
-    let res = `📊 **Torii Training Program Summary**\n\n`;
+    let res = `📊 **Training Program Summary**\n\n`;
     res += `- **Year Groups:** ${groups.length} Active ${upcoming.length > 0 ? `(+ ${upcoming.length} Awaiting Schedule)` : ''}\n`;
     res += `- **Total Batches:** ${batches.length} (${totalStudents > 0 ? totalStudents.toLocaleString() + ' Unique Enrolled Students' : 'Configured'})\n`;
     res += `- **Weekly Class Blocks:** ${totalSessions} Sessions\n`;
@@ -480,7 +495,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
       const dayClasses = [];
       batches.forEach(b => {
         (b.rows || []).forEach(r => {
-          if (r.day.toLowerCase().includes(d.toLowerCase())) {
+          if (covers(r, d, days)) {
             const isMain = (r.mainList || []).includes(matchedTrainer.name);
             const isSupport = (r.supportList || []).includes(matchedTrainer.name);
             if (isMain || isSupport) {
@@ -554,6 +569,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
             dept: b.dept,
             subject: r.subject,
             day: r.day,
+            dayIndexes: r.dayIndexes,
             time: r.time,
             slot: r.slot,
             venue: r.venue,
@@ -604,7 +620,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
 
     if (targetDay) {
       res += `**Schedule for ${targetDay}:**\n\n`;
-      const filteredRows = (matchedBatch.rows || []).filter(r => r.day.toLowerCase().includes(targetDay.toLowerCase()));
+      const filteredRows = (matchedBatch.rows || []).filter(r => covers(r, targetDay, days));
       if (filteredRows.length === 0) {
         res += `*No classes scheduled for ${matchedBatch.name} on ${targetDay}.*\n`;
       } else {
@@ -654,6 +670,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
             group: b.group,
             dept: b.dept,
             day: r.day,
+            dayIndexes: r.dayIndexes,
             time: r.time,
             slot: r.slot,
             venue: r.venue,
@@ -665,7 +682,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
     });
 
     if (targetDay) {
-      subjectSessions = subjectSessions.filter(s => s.day.toLowerCase().includes(targetDay.toLowerCase()));
+      subjectSessions = subjectSessions.filter(s => covers(s, targetDay, days));
     }
 
     let res = `📚 **Subject Allocation — ${matchedSubject}** ${targetDay ? `(${targetDay})` : ''}\n\n`;
@@ -708,6 +725,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
             dept: b.dept,
             subject: r.subject,
             day: r.day,
+            dayIndexes: r.dayIndexes,
             time: r.time,
             slot: r.slot,
             trainer: r.trainer,
@@ -718,7 +736,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
     });
 
     if (targetDay) {
-      venueSessions = venueSessions.filter(s => s.day.toLowerCase().includes(targetDay.toLowerCase()));
+      venueSessions = venueSessions.filter(s => covers(s, targetDay, days));
     }
 
     if (venueSessions.length === 0) {
@@ -744,7 +762,7 @@ export function answerScheduleQuery(userQuery, scheduleData) {
 
     batches.forEach(b => {
       (b.rows || []).forEach(r => {
-        if (r.day.toLowerCase().includes(d.toLowerCase())) {
+        if (covers(r, d, days)) {
           daySessions.push({
             batch: b.name,
             group: b.group,

@@ -1,5 +1,5 @@
 /*
- * Loads the board that shipped as Torii Schedule.html into MongoDB.
+ * Loads the initial schedule (initialData.json) into MongoDB.
  *
  *   npm run seed            upsert — safe to re-run, keeps anything you added
  *   npm run seed -- --fresh wipe the schedule collections first

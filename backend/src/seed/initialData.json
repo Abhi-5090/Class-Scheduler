@@ -113,10 +113,10 @@
   ],
   "venues": [
     {
-      "name": "Torii Block · 1st Floor Hall"
+      "name": "Training Block · 1st Floor Hall"
     },
     {
-      "name": "Torii Block · 2nd Floor Hall"
+      "name": "Training Block · 2nd Floor Hall"
     },
     {
       "name": "Examination Block · 3rd Floor Hall"
@@ -130,7 +130,7 @@
       "name": "AI Ready 2027 · Batch-1",
       "group": "Final Year",
       "dept": "",
-      "venue": "Torii Block · 2nd Floor Hall",
+      "venue": "Training Block · 2nd Floor Hall",
       "count": 140,
       "sessions": [
         {
@@ -140,7 +140,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 2nd Floor Hall",
+          "venue": "Training Block · 2nd Floor Hall",
           "mainTrainers": [
             "Suneeta",
             "Abhishek"
@@ -154,7 +154,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 2nd Floor Hall",
+          "venue": "Training Block · 2nd Floor Hall",
           "mainTrainers": [
             "Suneeta",
             "Abhishek"
@@ -168,7 +168,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 2nd Floor Hall",
+          "venue": "Training Block · 2nd Floor Hall",
           "mainTrainers": [
             "Suneeta",
             "Abhishek"
@@ -182,7 +182,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 2nd Floor Hall",
+          "venue": "Training Block · 2nd Floor Hall",
           "mainTrainers": [
             "Suneeta",
             "Sudhir",
@@ -197,7 +197,7 @@
             1
           ],
           "subject": "GenAI",
-          "venue": "Torii Block · 2nd Floor Hall",
+          "venue": "Training Block · 2nd Floor Hall",
           "mainTrainers": [
             "Bhargav"
           ],
@@ -213,7 +213,7 @@
             7
           ],
           "subject": "GenAI",
-          "venue": "Torii Block · 2nd Floor Hall",
+          "venue": "Training Block · 2nd Floor Hall",
           "mainTrainers": [
             "Bhargav"
           ],
@@ -230,7 +230,7 @@
       "name": "Placement 2027 · Batch-2",
       "group": "Final Year",
       "dept": "",
-      "venue": "Torii Block · 1st Floor Hall",
+      "venue": "Training Block · 1st Floor Hall",
       "count": 140,
       "sessions": [
         {
@@ -240,7 +240,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 1st Floor Hall",
+          "venue": "Training Block · 1st Floor Hall",
           "mainTrainers": [
             "Sudhir"
           ],
@@ -255,7 +255,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 1st Floor Hall",
+          "venue": "Training Block · 1st Floor Hall",
           "mainTrainers": [
             "Sudhir"
           ],
@@ -270,7 +270,7 @@
             7
           ],
           "subject": "Coding",
-          "venue": "Torii Block · 1st Floor Hall",
+          "venue": "Training Block · 1st Floor Hall",
           "mainTrainers": [
             "Sudhir"
           ],
@@ -285,7 +285,7 @@
             7
           ],
           "subject": "Aptitude",
-          "venue": "Torii Block · 1st Floor Hall",
+          "venue": "Training Block · 1st Floor Hall",
           "mainTrainers": [
             "Naveen"
           ],
@@ -300,7 +300,7 @@
             1
           ],
           "subject": "SQL",
-          "venue": "Torii Block · 1st Floor Hall",
+          "venue": "Training Block · 1st Floor Hall",
           "mainTrainers": [
             "Harshavardhini",
             "Sampath"
@@ -314,7 +314,7 @@
             7
           ],
           "subject": "SQL",
-          "venue": "Torii Block · 1st Floor Hall",
+          "venue": "Training Block · 1st Floor Hall",
           "mainTrainers": [
             "Harshavardhini",
             "Sampath"

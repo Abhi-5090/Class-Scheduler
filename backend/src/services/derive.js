@@ -4,11 +4,14 @@
  * grid or a hall grid, so the three views cannot drift apart.
  */
 
-/* The teaching day runs 9:00 AM → 4:10 PM, so an hour of 9–11 is morning,
-   12 is noon, and 1–4 is afternoon. That covers every label on the grid. */
+import { today, rangeStatus, sessionRange } from './dates.js';
+
+/* Slot labels are written 12-hour without AM/PM ("9:00–9:50", "1:40–2:30").
+   A college day runs roughly 8 AM to 7 PM, so 8–11 is morning and 12 and
+   1–7 are afternoon. A label already in 24-hour form (13:00+) is read as PM. */
 function meridiem(hhmm) {
   const hour = parseInt(hhmm.split(':')[0], 10);
-  return hour === 12 || hour <= 8 ? 'PM' : 'AM';
+  return hour >= 12 || hour <= 7 ? 'PM' : 'AM';
 }
 
 function stamp(hhmm) {
@@ -98,6 +101,7 @@ function collapseRows(sessions, config) {
   const rows = [];
   for (const { session, slotList, dayIdx } of buckets.values()) {
     const sorted = [...new Set(dayIdx)].sort((a, b) => a - b);
+    if (!sorted.length) continue;                   // every day it named has left the grid
 
     /* walk the sorted day indexes, breaking into runs of consecutive days */
     let run = [sorted[0]];
@@ -138,19 +142,33 @@ function collapseRows(sessions, config) {
  * Builds the whole payload the board consumes.
  * `config` is { slots, days, lunchIndex }.
  */
-export function buildSchedule({ config, groups, trainers, venues, batches, activities = [] }) {
+export function buildSchedule({ config, groups, trainers, venues, batches, activities = [], on = today() }) {
   const { slots, days, lunchIndex } = config;
   const slotCount = slots.length;
 
-  /* ── batch cards, grouped by year ── */
+  /* ── batch cards, grouped by year ──
+     Every batch is listed (the monthly calendar needs past and future ones),
+     each tagged upcoming / current / ended for `on`. The weekly views — the
+     year cards and every trainer and hall grid below — only take what is
+     running on `on`, so a finished or not-yet-started batch never shows up
+     as this week's class or blocks a trainer's free period. */
+  const isLive = (s, b) => {
+    const { start, end } = sessionRange(s, b);
+    return rangeStatus(start, end, on) === 'current';
+  };
+
   const batchCards = batches.map(b => {
-    const batchSessions = (b.sessions || []).map(s => ({
-      ...s,
-      venue: s.venue !== undefined ? s.venue : (b.venue || ''),
-      startDate: s.startDate || b.startDate || '',
-      endDate: s.endDate || b.endDate || '',
-    }));
-    const rows = collapseRows(batchSessions, config);
+    const batchSessions = (b.sessions || []).map(s => {
+      const { start, end } = sessionRange(s, b);
+      return { ...s, venue: s.venue || '', startDate: start, endDate: end };
+    });
+    const liveSessions = batchSessions.filter(s => rangeStatus(s.startDate, s.endDate, on) === 'current');
+    const statuses = batchSessions.map(s => rangeStatus(s.startDate, s.endDate, on));
+    const status = (b.startDate || b.endDate) ? rangeStatus(b.startDate || '', b.endDate || '', on)
+      : statuses.includes('current') || !statuses.length ? 'current'
+      : statuses.includes('upcoming') ? 'upcoming' : 'ended';
+
+    const rows = collapseRows(status === 'current' ? liveSessions : batchSessions, config);
     /* A batch can meet in different halls on different days now, so there is
        no single "the" venue any more — just the distinct set actually in use,
        read off the rows so it always agrees with what's displayed. */
@@ -165,6 +183,7 @@ export function buildSchedule({ config, groups, trainers, venues, batches, activ
       order: Number(b.order) || 0,
       startDate: b.startDate || '',
       endDate: b.endDate || '',
+      status,
       rows,
       sessions: batchSessions,
     };
@@ -176,10 +195,15 @@ export function buildSchedule({ config, groups, trainers, venues, batches, activ
     .map(g => ({
       group: g.name,
       batches: batchCards
-        .filter(b => b.group === g.name)
+        .filter(b => b.group === g.name && b.status === 'current' && b.rows.length)
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)),
     }))
     .filter(g => g.batches.length);
+
+  /* what is off this week's board and why, so the board can say so */
+  const offBoard = batchCards
+    .filter(b => b.status !== 'current')
+    .map(b => ({ name: b.name, group: b.group, status: b.status, startDate: b.startDate, endDate: b.endDate }));
 
   const upcoming = ordered
     .filter(g => g.pending)
@@ -213,9 +237,9 @@ export function buildSchedule({ config, groups, trainers, venues, batches, activ
 
   for (const b of batches) {
     for (const s of b.sessions || []) {
-      if (!days.includes(s.day)) continue;
+      if (!days.includes(s.day) || !isLive(s, b)) continue;
       const main = s.mainTrainers || [], support = s.supportTrainers || [];
-      const venueName = s.venue || b.venue || '';
+      const venueName = s.venue || '';
 
       for (const name of main) {
         ensureTrainer(name);
@@ -303,8 +327,6 @@ export function buildSchedule({ config, groups, trainers, venues, batches, activ
     return {
       id: String(t._id || t.id || t.name),
       name: t.name,
-      email: t.email || '',
-      phone: t.phone || '',
       track: (t.track === 'non-teaching' || t.track === 'non-technical') ? 'non-teaching' : 'teaching',
       grid, roles, venues,
       free: s.free, totalFree: s.totalFree, totalBusy: s.totalBusy,
@@ -334,6 +356,8 @@ export function buildSchedule({ config, groups, trainers, venues, batches, activ
     groups: groupViews,
     upcoming,
     conflicts,
-    uniqueStudents: calculateUniqueStudents(batches),
+    offBoard,
+    today: on,
+    uniqueStudents: calculateUniqueStudents(batchCards.filter(b => b.status === 'current')),
   };
 }

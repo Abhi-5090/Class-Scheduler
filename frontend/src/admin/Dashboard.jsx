@@ -11,8 +11,8 @@ export default function Dashboard() {
   useEffect(() => {
     api.schedule().then(setData).catch(e => setError(e.message));
     const refresh = () => api.schedule().then(setData).catch(() => {});
-    addEventListener('torii:changed', refresh);
-    return () => removeEventListener('torii:changed', refresh);
+    addEventListener('schedule:changed', refresh);
+    return () => removeEventListener('schedule:changed', refresh);
   }, []);
 
   if (error) return <><PageHead title="Dashboard" /><Notice error={error} /></>;

@@ -9,14 +9,19 @@ export default function VenuesTab() {
   const [rows, setRows] = useState(null);
   const [batches, setBatches] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [snapshot, setSnapshot] = useState('');   // the form as opened, to tell if it changed
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const open = draft => { setError(''); setEditing(draft); setSnapshot(JSON.stringify(draft)); };
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
 
   const reload = async () => {
     try {
       const [v, b] = await Promise.all([api.list('venues'), api.list('batches')]);
-      setRows(v); setBatches(b);
-    } catch (e) { setError(e.message); setRows([]); }
+      setRows(v);
+      setLoadError(''); setBatches(b);
+    } catch (e) { setLoadError(e.message); }
   };
   useEffect(() => { reload(); }, []);
 
@@ -25,6 +30,8 @@ export default function VenuesTab() {
   const users = name => (batches || []).filter(b => (b.sessions || []).some(s => s.venue === name));
 
   async function save() {
+    if (saving) return;                         // a second click while the first is in flight
+    setSaving(true);
     setError('');
     try {
       const body = { name: editing.name, capacity: Number(editing.capacity) || 0, active: editing.active };
@@ -35,6 +42,7 @@ export default function VenuesTab() {
       announceChange();
       flash(editing._id ? `Saved ${editing.name}` : `Added ${editing.name}`);
     } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
   async function remove(v) {
@@ -52,7 +60,16 @@ export default function VenuesTab() {
     } catch (e) { setError(e.message); }
   }
 
-  if (!rows) return <><PageHead title="Training Halls" /><Spinner /></>;
+  if (!rows) {
+    return (
+      <>
+        <PageHead title="Training Halls" />
+        {loadError
+          ? <><Notice error={`Could not load: ${loadError}`} /><button className="btn btn-ghost" onClick={() => { setLoadError(''); reload(); }}>Try again</button></>
+          : <Spinner />}
+      </>
+    );
+  }
 
   return (
     <>
@@ -60,16 +77,16 @@ export default function VenuesTab() {
         title="Training Halls"
         blurb="The rooms sessions run in. Each hall's occupancy on the board is worked out from the batches assigned to it, so it stays right on its own."
       >
-        <button className="btn btn-primary" onClick={() => setEditing({ ...blank })}>+ New hall</button>
+        <button className="btn btn-primary" onClick={() => open({ ...blank })}>+ New hall</button>
       </PageHead>
 
-      <Notice error={error} ok={ok} />
+      <Notice error={error || (loadError && `Could not refresh: ${loadError}`)} ok={ok} />
 
       <div className="card">
         {!rows.length ? (
           <EmptyState
             title="No halls yet"
-            action={<button className="btn btn-primary" onClick={() => setEditing({ ...blank })}>+ New hall</button>}
+            action={<button className="btn btn-primary" onClick={() => open({ ...blank })}>+ New hall</button>}
           >
             Add a hall, then pick it when you edit a batch.
           </EmptyState>
@@ -91,7 +108,7 @@ export default function VenuesTab() {
                       </td>
                       <td>{v.active ? <span className="pill-tag">active</span> : <span className="pill-tag grey">hidden</span>}</td>
                       <td className="act">
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ ...v })}>Edit</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => open({ ...v })}>Edit</button>
                         <button className="btn btn-danger btn-sm" onClick={() => remove(v)}>Delete</button>
                       </td>
                     </tr>
@@ -107,10 +124,11 @@ export default function VenuesTab() {
         <Modal
           title={editing._id ? `Edit ${editing.name}` : 'New hall'}
           onClose={() => setEditing(null)}
+          dirty={JSON.stringify(editing) !== snapshot}
           footer={
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim()}>
+              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
                 {editing._id ? 'Save changes' : 'Add hall'}
               </button>
             </>

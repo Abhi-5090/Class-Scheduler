@@ -27,7 +27,7 @@ import {
 export default function CalendarView({ data, admin }) {
   const host = useRef(null);
 
-  // Initialize with current date or September 2026
+  // Opens on the current month
   const now = new Date();
   const [currentYear, setCurrentYear] = useState(() => now.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(() => now.getMonth()); // 0-indexed: 8 = Sep, 9 = Oct
@@ -70,6 +70,23 @@ export default function CalendarView({ data, admin }) {
     }
   };
 
+  /* The month picker spans every year a batch runs in, plus this year and the
+     next, plus whatever year is on screen — so the arrows can never step off
+     the end of the list. */
+  const yearOptions = useMemo(() => {
+    const ys = new Set([now.getFullYear(), now.getFullYear() + 1, currentYear]);
+    for (const b of data.batches || []) {
+      for (const v of [b.startDate, b.endDate]) if (v) ys.add(Number(v.slice(0, 4)));
+    }
+    return [...ys].filter(Number.isFinite).sort((a, b) => a - b);
+  }, [data.batches, currentYear]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* last, this and next month, relative to today */
+  const quickMonths = [-1, 0, 1].map(k => {
+    const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+
   const jumpTo = (year, monthIdx) => {
     setCurrentYear(year);
     setCurrentMonth(monthIdx);
@@ -83,7 +100,7 @@ export default function CalendarView({ data, admin }) {
 
   // Generate 7-column calendar matrix
   const calendarGrid = useMemo(() => {
-    return getMonthCalendarGrid(currentYear, currentMonth);
+    return getMonthCalendarGrid(currentYear, currentMonth, data.days);
   }, [currentYear, currentMonth]);
 
   // Pre-calculate classes for all days in the grid
@@ -215,7 +232,7 @@ export default function CalendarView({ data, admin }) {
               }}
               title="Select Month & Year"
             >
-              {[2026, 2027].map(y =>
+              {yearOptions.map(y =>
                 MONTH_NAMES.map((name, mIdx) => (
                   <option key={`${y}-${mIdx}`} value={`${y}-${mIdx}`}>
                     {name} {y}
@@ -236,29 +253,18 @@ export default function CalendarView({ data, admin }) {
           </button>
         </div>
 
-        {/* Center: Quick Month Shortcuts (e.g. Sep 2026, Oct 2026) */}
+        {/* Center: quick shortcuts to last, this and next month */}
         <div className="cal-quick-chips">
-          <button
-            type="button"
-            className={`cal-chip ${currentYear === 2026 && currentMonth === 8 ? 'on' : ''}`}
-            onClick={() => jumpTo(2026, 8)}
-          >
-            September 2026
-          </button>
-          <button
-            type="button"
-            className={`cal-chip ${currentYear === 2026 && currentMonth === 9 ? 'on' : ''}`}
-            onClick={() => jumpTo(2026, 9)}
-          >
-            October 2026
-          </button>
-          <button
-            type="button"
-            className={`cal-chip ${currentYear === 2026 && currentMonth === 10 ? 'on' : ''}`}
-            onClick={() => jumpTo(2026, 10)}
-          >
-            November 2026
-          </button>
+          {quickMonths.map(q => (
+            <button
+              key={`${q.y}-${q.m}`}
+              type="button"
+              className={`cal-chip ${currentYear === q.y && currentMonth === q.m ? 'on' : ''}`}
+              onClick={() => jumpTo(q.y, q.m)}
+            >
+              {MONTH_NAMES[q.m]} {q.y}
+            </button>
+          ))}
           <button
             type="button"
             className="cal-chip today-btn"
@@ -380,7 +386,7 @@ export default function CalendarView({ data, admin }) {
             {/* Weekday Column Headers */}
             <div className="cal-weekdays">
               {WEEKDAYS.map((day, idx) => (
-                <div key={day} className={`cal-weekday ${idx >= 5 ? 'weekend' : ''}`}>
+                <div key={day} className={`cal-weekday ${data.days.includes(day) ? '' : 'weekend'}`}>
                   <span className="name-full">{day}</span>
                   <span className="name-abbr">{WEEKDAYS_SHORT[idx]}</span>
                 </div>
@@ -499,8 +505,8 @@ export default function CalendarView({ data, admin }) {
                 <div className="cal-day-panel-empty">
                   <p>No training sessions scheduled for {formatDateLong(selectedDate)}.</p>
                   <span>
-                    {new Date(selectedDate + 'T00:00:00').getDay() === 0 || new Date(selectedDate + 'T00:00:00').getDay() === 6
-                      ? 'Weekend off — no faculty or batches allocated.'
+                    {!data.days.includes(WEEKDAYS[(new Date(selectedDate + 'T00:00:00').getDay() + 6) % 7])
+                      ? 'Not a teaching day — no faculty or batches allocated.'
                       : 'Classes may be inactive or outside the tentative training dates.'}
                   </span>
                 </div>
@@ -563,7 +569,7 @@ export default function CalendarView({ data, admin }) {
                     <span className="cal-agenda-date-badge">
                       {MONTH_NAMES[cell.month]} {cell.dayNumber}, {cell.year}
                     </span>
-                    {cell.isToday && <span className="pill-tag" style={{ background: 'var(--orange)', color: '#fff' }}>Today</span>}
+                    {cell.isToday && <span className="pill-tag" style={{ background: 'var(--accent)', color: '#fff' }}>Today</span>}
                   </div>
                   <button
                     type="button"
@@ -579,7 +585,7 @@ export default function CalendarView({ data, admin }) {
                     <div key={i} className={`cal-agenda-card ${getGroupClass(c.group)}`}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                         <span className="cal-chip-slot">{c.slotLabel} · {c.time}</span>
-                        <span className="tag" style={{ fontSize: 10, background: 'var(--orange-tint)', color: 'var(--orange-deep)' }}>
+                        <span className="tag" style={{ fontSize: 10, background: 'var(--accent-tint)', color: 'var(--accent-deep)' }}>
                           {c.group}
                         </span>
                       </div>

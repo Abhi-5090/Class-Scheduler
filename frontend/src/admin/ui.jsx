@@ -1,18 +1,38 @@
 import { useCallback, useEffect, useState } from 'react';
 
 /* ── modal ─────────────────────────────────────────────────────────────── */
-export function Modal({ title, sub, children, onClose, footer, wide }) {
+/*
+ * `dirty` marks unsaved edits: a stray Escape or backdrop click then asks
+ * before throwing them away, and leaving or reloading the page warns too.
+ * The explicit Cancel button is the caller's own and closes straight away.
+ */
+export function Modal({ title, sub, children, onClose, footer, wide, dirty = false }) {
+  const dismiss = useCallback(() => {
+    if (dirty && !window.confirm('Discard your unsaved changes?')) return;
+    onClose();
+  }, [dirty, onClose]);
+
   useEffect(() => {
-    const esc = e => { if (e.key === 'Escape') onClose(); };
+    const esc = e => {
+      /* Escape inside an open <select> only closes the dropdown */
+      if (e.key === 'Escape' && e.target?.tagName !== 'SELECT') dismiss();
+    };
     addEventListener('keydown', esc);
     /* the page behind must not scroll while a modal is up */
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { removeEventListener('keydown', esc); document.body.style.overflow = prev; };
-  }, [onClose]);
+  }, [dismiss]);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = e => { e.preventDefault(); e.returnValue = ''; };
+    addEventListener('beforeunload', warn);
+    return () => removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   return (
-    <div className="modal-back" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="modal-back" onMouseDown={e => { if (e.target === e.currentTarget) dismiss(); }}>
       <div className="modal" style={wide ? { maxWidth: 980 } : undefined} role="dialog" aria-modal="true">
         <h2>{title}</h2>
         {sub && <p className="sub">{sub}</p>}

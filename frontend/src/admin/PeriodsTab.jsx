@@ -4,10 +4,19 @@ import { announceChange } from './Console.jsx';
 import { PageHead, Field, Notice, Spinner } from './ui.jsx';
 
 /*
- * The period grid every other view is drawn on. The API refuses a change that
- * would leave a session pointing at a day or period that no longer exists, so
- * shrinking the grid tells you exactly what is in the way.
+ * The period grid every other view is drawn on. Sessions point at periods by
+ * position and at days by name, so every row remembers where it came from
+ * (`from`): the API then moves each class and logged activity along with its
+ * row on rename, removal or insertion, all in one go. Removing a period or day
+ * a class still uses is refused, with the list of what is in the way.
  */
+/* the editable shape: each row carries the position or name it was loaded with */
+const fromConfig = c => ({
+  slots: c.slots.map((label, i) => ({ label, from: i })),
+  days: c.days.map(name => ({ name, from: name })),
+  lunchIndex: c.lunchIndex,
+});
+
 export default function PeriodsTab() {
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(null);
@@ -17,16 +26,24 @@ export default function PeriodsTab() {
 
   useEffect(() => {
     api.config()
-      .then(c => { setSaved(c); setDraft({ slots: c.slots, days: c.days, lunchIndex: c.lunchIndex }); })
+      .then(c => { setSaved(c); setDraft(fromConfig(c)); })
       .catch(e => setError(e.message));
   }, []);
 
+  const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(fromConfig(saved));
+  /* unsaved grid edits survive neither a reload nor leaving the page — warn first */
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = e => { e.preventDefault(); e.returnValue = ''; };
+    addEventListener('beforeunload', warn);
+    return () => removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
   if (!draft) return <><PageHead title="Time Slots & Days" /><Spinner /></>;
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify({ slots: saved.slots, days: saved.days, lunchIndex: saved.lunchIndex });
 
-  const setSlot = (i, v) => setDraft({ ...draft, slots: draft.slots.map((s, j) => (j === i ? v : s)) });
-  const setDay = (i, v) => setDraft({ ...draft, days: draft.days.map((d, j) => (j === i ? v : d)) });
+  const setSlot = (i, v) => setDraft({ ...draft, slots: draft.slots.map((s, j) => (j === i ? { ...s, label: v } : s)) });
+  const setDay = (i, v) => setDraft({ ...draft, days: draft.days.map((d, j) => (j === i ? { ...d, name: v } : d)) });
 
   const removeSlot = i => setDraft({
     ...draft,
@@ -39,16 +56,21 @@ export default function PeriodsTab() {
   async function save() {
     setBusy(true); setError(''); setOk('');
     try {
-      const clean = {
-        slots: draft.slots.map(s => s.trim()).filter(Boolean),
-        days: draft.days.map(d => d.trim()).filter(Boolean),
+      /* blank rows are refused rather than dropped, so the lunch marker and
+         every later slot number stay exactly where they appear on screen */
+      if (draft.slots.some(s => !s.label.trim())) throw new Error('Fill in or remove the blank period row.');
+      if (draft.days.some(d => !d.name.trim())) throw new Error('Fill in or remove the blank day row.');
+      const c = await api.saveConfig({
+        slots: draft.slots.map(s => ({ label: s.label.trim(), from: s.from })),
+        days: draft.days.map(d => ({ name: d.name.trim(), from: d.from })),
         lunchIndex: draft.lunchIndex,
-      };
-      const c = await api.saveConfig(clean);
+      });
       setSaved(c);
-      setDraft({ slots: c.slots, days: c.days, lunchIndex: c.lunchIndex });
+      setDraft(fromConfig(c));
       announceChange();
-      setOk('Period grid saved.');
+      setOk(c.activitiesCleared
+        ? `Period grid saved. ${c.activitiesCleared} logged activit${c.activitiesCleared > 1 ? 'ies' : 'y'} on removed periods were cleared.`
+        : 'Period grid saved.');
       setTimeout(() => setOk(''), 2600);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
@@ -60,7 +82,7 @@ export default function PeriodsTab() {
         title="Time Slots & Days"
         blurb="The shape of the teaching week. Sessions refer to periods by number, so this is what “Slot 1–2” actually means on the board."
       >
-        <button className="btn btn-ghost" disabled={!dirty || busy} onClick={() => setDraft({ slots: saved.slots, days: saved.days, lunchIndex: saved.lunchIndex })}>
+        <button className="btn btn-ghost" disabled={!dirty || busy} onClick={() => setDraft(fromConfig(saved))}>
           Discard
         </button>
         <button className="btn btn-primary" disabled={!dirty || busy} onClick={save}>
@@ -81,7 +103,7 @@ export default function PeriodsTab() {
           {draft.slots.map((s, i) => (
             <div className={`line ${i === draft.lunchIndex ? 'is-lunch' : ''}`} key={i}>
               <span className="ix">{i + 1}</span>
-              <input value={s} onChange={e => setSlot(i, e.target.value)} placeholder="9:00–9:50" />
+              <input value={s.label} onChange={e => setSlot(i, e.target.value)} placeholder="9:00–9:50" maxLength={40} />
               <button
                 type="button"
                 className={`btn btn-sm ${i === draft.lunchIndex ? 'btn-primary' : 'btn-ghost'}`}
@@ -103,7 +125,7 @@ export default function PeriodsTab() {
 
         <button
           className="btn btn-ghost btn-sm" style={{ marginTop: 14 }}
-          onClick={() => setDraft({ ...draft, slots: [...draft.slots, ''] })}
+          onClick={() => setDraft({ ...draft, slots: [...draft.slots, { label: '', from: null }] })}
         >
           + Add period
         </button>
@@ -117,7 +139,7 @@ export default function PeriodsTab() {
           {draft.days.map((d, i) => (
             <div className="line" key={i}>
               <span className="ix">{i + 1}</span>
-              <input value={d} onChange={e => setDay(i, e.target.value)} placeholder="Monday" />
+              <input value={d.name} onChange={e => setDay(i, e.target.value)} placeholder="Monday" maxLength={20} />
               <button
                 type="button" className="btn btn-danger btn-sm"
                 disabled={draft.days.length <= 1}
@@ -131,7 +153,7 @@ export default function PeriodsTab() {
 
         <button
           className="btn btn-ghost btn-sm" style={{ marginTop: 14 }}
-          onClick={() => setDraft({ ...draft, days: [...draft.days, ''] })}
+          onClick={() => setDraft({ ...draft, days: [...draft.days, { name: '', from: null }] })}
         >
           + Add day
         </button>
@@ -147,7 +169,7 @@ export default function PeriodsTab() {
               {draft.slots.map((s, i) => (
                 <tr key={i}>
                   <td className="nm">Slot {i + 1}</td>
-                  <td className="mono">{s || <span className="muted">blank</span>}</td>
+                  <td className="mono">{s.label || <span className="muted">blank</span>}</td>
                   <td>{i === draft.lunchIndex ? <span className="pill-tag warn">lunch break</span> : <span className="muted">teaching period</span>}</td>
                 </tr>
               ))}

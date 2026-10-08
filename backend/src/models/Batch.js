@@ -25,4 +25,10 @@ const batchSchema = new mongoose.Schema({
   sessions:  { type: [sessionSchema], default: [] },
 }, { timestamps: true });
 
+/* the rename/delete cascades and the clash checks look sessions up by these */
+batchSchema.index({ 'sessions.mainTrainers': 1 });
+batchSchema.index({ 'sessions.supportTrainers': 1 });
+batchSchema.index({ 'sessions.venue': 1 });
+batchSchema.index({ group: 1 });
+
 export default mongoose.model('Batch', batchSchema);

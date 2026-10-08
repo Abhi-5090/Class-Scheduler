@@ -1,27 +1,47 @@
-const RAW_API_URL = import.meta.env.VITE_API_URL || 'https://torii-schedule-api.onrender.com';
+/* Same-origin /api by default: the Vite dev server proxies it to the local
+   backend. For a deploy, set VITE_API_URL to the backend's public URL. */
+const RAW_API_URL = import.meta.env.VITE_API_URL || '/api';
 const API_BASE = RAW_API_URL.replace(/\/+$/, '');
 
-/* Every call carries the session cookie; nothing here reads or stores a token. */
+/* Fired when a signed-in call comes back 401: the session expired or the
+   password was changed elsewhere. useAdmin listens and drops to signed-out. */
+export const AUTH_EXPIRED = 'auth:expired';
+
+/* Every call carries the session cookie; nothing here reads or stores a token.
+   X-Requested-With is the API's CSRF check — a page on another site cannot
+   send it, so the API refuses any write that lacks it. */
 async function call(path, { method = 'GET', body } = {}) {
   const url = API_BASE.startsWith('http') ? `${API_BASE}/api${path}` : `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    method,
-    credentials: 'include',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const headers = { 'X-Requested-With': 'fetch' };
+  if (body) headers['Content-Type'] = 'application/json';
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'include',
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw Object.assign(new Error('Cannot reach the server — check your connection and try again'), { status: 0 });
+  }
 
   const text = await res.text();
   let data = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    data = { error: text?.slice(0, 150) || `Server returned ${res.status}` };
+    /* a proxy or host error page — never echo its HTML into the UI */
+    data = { error: `The server returned an unexpected response (${res.status})` };
   }
 
   if (!res.ok) {
     const err = new Error(data?.error || `Request failed (${res.status})`);
     err.status = res.status;
+    if (res.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/me')) {
+      dispatchEvent(new Event(AUTH_EXPIRED));
+    }
     throw err;
   }
   return data;
@@ -41,12 +61,14 @@ export const api = {
 
   /* `when` is [{day, slots}] — one entry for a single session, every session
      on the batch when checking a hall. */
-  availability: (when, excludeBatch) => {
+  availability: (when, excludeBatch, range = {}) => {
     const q = when
       .filter(w => w.day && w.slots.length)
       .map(w => `when=${encodeURIComponent(`${w.day}:${[...w.slots].sort((a, b) => a - b).join(',')}`)}`);
     if (!q.length) return Promise.resolve({ when: [], trainers: [], venues: [] });
-    if (excludeBatch) q.push(`excludeBatch=${excludeBatch}`);
+    if (excludeBatch) q.push(`excludeBatch=${encodeURIComponent(excludeBatch)}`);
+    if (range.from) q.push(`from=${encodeURIComponent(range.from)}`);
+    if (range.to) q.push(`to=${encodeURIComponent(range.to)}`);
     return call(`/admin/availability?${q.join('&')}`);
   },
 

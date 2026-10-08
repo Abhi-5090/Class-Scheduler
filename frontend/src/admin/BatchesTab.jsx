@@ -7,6 +7,19 @@ import SessionEditor, { blankSession } from './SessionEditor.jsx';
 import { exportBatchesPDF } from '../lib/pdfExport.js';
 import { formatDateRange } from '../lib/calendarUtils.js';
 
+/* Quick date ranges relative to today: this month, next month, and both. */
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function datePresets(now = new Date()) {
+  const first = k => new Date(now.getFullYear(), now.getMonth() + k, 1);
+  const last = k => new Date(now.getFullYear(), now.getMonth() + k + 1, 0);
+  const name = (d, withYear = true) => d.toLocaleDateString('en-US', withYear ? { month: 'long', year: 'numeric' } : { month: 'short' });
+  return [
+    { label: name(first(0)), startDate: iso(first(0)), endDate: iso(last(0)) },
+    { label: name(first(1)), startDate: iso(first(1)), endDate: iso(last(1)) },
+    { label: `${name(first(0), false)} – ${name(first(1))}`, startDate: iso(first(0)), endDate: iso(last(1)) },
+  ];
+}
+
 const emptyBatch = groups => ({
   name: '', group: groups[0]?.name || '', dept: '', count: 0,
   startDate: '', endDate: '',
@@ -22,6 +35,20 @@ export default function BatchesTab() {
   const [exporting, setExporting] = useState(false);
 
   const [editing, setEditing] = useState(null);   // the draft being edited, or null
+  const [snapshot, setSnapshot] = useState('');  // the draft as opened, to tell if it changed
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  /* every session gets a stable key for React, so removing one in the middle
+     does not hand its neighbour's clash lookup to the wrong row */
+  const keyed = s => ({ ...s, _key: s._key || s._id || Math.random().toString(36).slice(2) });
+  const open = draft => {
+    const d = { ...draft, sessions: (draft.sessions || []).map(keyed) };
+    setError('');
+    setEditing(d);
+    setSnapshot(JSON.stringify(d));
+  };
+  const dirty = !!editing && JSON.stringify(editing) !== snapshot;
   const [arrangingGroup, setArrangingGroup] = useState(null); // active year group name in arrange modal or null
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
@@ -46,7 +73,8 @@ export default function BatchesTab() {
         api.list('batches'), api.list('groups'), api.list('trainers'), api.list('venues'), api.config(),
       ]);
       setBatches(b); setGroups(g); setTrainers(t); setVenues(v); setConfig(c);
-    } catch (e) { setError(e.message); setBatches([]); }
+      setLoadError('');
+    } catch (e) { setLoadError(e.message); }
   };
   useEffect(() => { reload(); }, []);
 
@@ -70,14 +98,20 @@ export default function BatchesTab() {
 
   async function save() {
     const draft = editing;
+    if (saving) return;                         // a second click while the first is in flight
+    if (draft.startDate && draft.endDate && draft.endDate < draft.startDate) {
+      setError('The end date is before the start date.');
+      return;
+    }
     setError('');
+    setSaving(true);
     try {
       const body = {
         name: draft.name, group: draft.group, dept: draft.dept,
         count: Number(draft.count) || 0,
         startDate: draft.startDate || '',
         endDate: draft.endDate || '',
-        sessions: draft.sessions,
+        sessions: draft.sessions.map(({ _key, ...s }) => s),
       };
       if (draft._id) await api.update('batches', draft._id, body);
       else await api.create('batches', body);
@@ -87,6 +121,7 @@ export default function BatchesTab() {
       announceChange();
       flash(draft._id ? `Saved ${draft.name}` : `Created ${draft.name}`);
     } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
   async function remove(b) {
@@ -143,6 +178,15 @@ export default function BatchesTab() {
     } catch (e) { setError(e.message); }
   }
 
+  if (loadError && (!batches || !config)) {
+    return (
+      <>
+        <PageHead title="Batches & Sessions" />
+        <Notice error={`Could not load batches: ${loadError}`} />
+        <button className="btn btn-ghost" onClick={() => { setLoadError(''); reload(); }}>Try again</button>
+      </>
+    );
+  }
   if (!batches || !config) return <><PageHead title="Batches & Sessions" /><Spinner /></>;
 
   const currentArrangeGroup = arrangingGroup || (filter !== 'All' ? filter : groups[0]?.name || '');
@@ -189,13 +233,13 @@ export default function BatchesTab() {
         <button
           className="btn btn-primary"
           disabled={!groups.length}
-          onClick={() => setEditing(emptyBatch(groups))}
+          onClick={() => open(emptyBatch(groups))}
         >
           + New batch
         </button>
       </PageHead>
 
-      <Notice error={error} ok={ok} />
+      <Notice error={error || (loadError && `Could not refresh: ${loadError}`)} ok={ok} />
 
       {!groups.length && (
         <div className="conflict">
@@ -229,7 +273,7 @@ export default function BatchesTab() {
           <EmptyState
             title={batches.length ? 'No batches in this year group' : 'No batches yet'}
             action={groups.length && (
-              <button className="btn btn-primary" onClick={() => setEditing(emptyBatch(groups))}>+ New batch</button>
+              <button className="btn btn-primary" onClick={() => open(emptyBatch(groups))}>+ New batch</button>
             )}
           >
             {batches.length ? 'Pick another year, or add a batch here.' : 'Add your first batch to start building the board.'}
@@ -310,7 +354,7 @@ export default function BatchesTab() {
                       </td>
                       <td className="mono">{b.count || '—'}</td>
                       <td className="act">
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(structuredClone(b))}>Edit</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => open(structuredClone(b))}>Edit</button>
                         <button className="btn btn-danger btn-sm" onClick={() => remove(b)}>Delete</button>
                       </td>
                     </tr>
@@ -426,7 +470,7 @@ export default function BatchesTab() {
                     {arrangeBatchesList.map((b, i) => (
                       <div className="arrange-preview-card" key={b._id}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--orange)' }}>#{i + 1}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)' }}>#{i + 1}</span>
                           {b.dept && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{b.dept}</span>}
                         </div>
                         <strong>{b.name}</strong>
@@ -447,18 +491,19 @@ export default function BatchesTab() {
           title={editing._id ? `Edit ${editing.name}` : 'New batch'}
           sub="A session is one class on one day. Add as many as the batch has in a week."
           onClose={() => setEditing(null)}
+          dirty={dirty}
           footer={
             <>
               <button
                 className="btn btn-ghost"
-                onClick={() => setEditing({ ...editing, sessions: [...editing.sessions, blankSession()] })}
+                onClick={() => setEditing({ ...editing, sessions: [...editing.sessions, keyed(blankSession())] })}
               >
                 + Add session
               </button>
               <span className="spacer" />
-              <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim()}>
-                {editing._id ? 'Save changes' : 'Create batch'}
+              <button className="btn btn-ghost" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
+              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
+                {saving ? 'Saving…' : editing._id ? 'Save changes' : 'Create batch'}
               </button>
             </>
           }
@@ -533,35 +578,22 @@ export default function BatchesTab() {
 
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Quick Presets:</span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11.5, padding: '3px 8px' }}
-                onClick={() => setEditing({ ...editing, startDate: '2026-09-01', endDate: '2026-09-30' })}
-              >
-                September 2026
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11.5, padding: '3px 8px' }}
-                onClick={() => setEditing({ ...editing, startDate: '2026-10-01', endDate: '2026-10-31' })}
-              >
-                October 2026
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11.5, padding: '3px 8px' }}
-                onClick={() => setEditing({ ...editing, startDate: '2026-09-01', endDate: '2026-10-31' })}
-              >
-                Sep – Oct 2026
-              </button>
+              {datePresets().map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 11.5, padding: '3px 8px' }}
+                  onClick={() => setEditing({ ...editing, startDate: p.startDate, endDate: p.endDate })}
+                >
+                  {p.label}
+                </button>
+              ))}
               {(editing.startDate || editing.endDate) && (
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--orange-burnt)' }}
+                  style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--accent-strong)' }}
                   onClick={() => setEditing({ ...editing, startDate: '', endDate: '' })}
                 >
                   Clear (Continuous)
@@ -582,13 +614,14 @@ export default function BatchesTab() {
 
           {editing.sessions.map((s, i) => (
             <SessionEditor
-              key={i}
+              key={s._key}
               index={i}
               session={s}
               config={config}
               trainers={trainers}
               venues={venues}
               batchId={editing._id}
+              batchDates={{ startDate: editing.startDate, endDate: editing.endDate }}
               onChange={next => {
                 const sessions = [...editing.sessions];
                 sessions[i] = next;

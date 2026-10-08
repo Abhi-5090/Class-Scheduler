@@ -92,7 +92,9 @@ export function formatDateLong(dateStr) {
  * Generates the full 7-column calendar grid for a given year and month (0-indexed).
  * Each cell includes date information, whether it is in the current month, today, weekend, etc.
  */
-export function getMonthCalendarGrid(year, monthIndex) {
+export function getMonthCalendarGrid(year, monthIndex, teachingDays = []) {
+  /* "off" means not one of the configured teaching days (Sat/Sun by default) */
+  const off = i => (teachingDays.length ? !teachingDays.includes(WEEKDAYS[i]) : i >= 5);
   const firstDayOfMonth = new Date(year, monthIndex, 1);
   const lastDayOfMonth = new Date(year, monthIndex + 1, 0);
   const totalDays = lastDayOfMonth.getDate();
@@ -120,7 +122,7 @@ export function getMonthCalendarGrid(year, monthIndex) {
       isCurrentMonth: false,
       isPrevMonth: true,
       isNextMonth: false,
-      isWeekend: dayOfWeekIdx >= 5,
+      isWeekend: off(dayOfWeekIdx),
     });
   }
 
@@ -143,7 +145,7 @@ export function getMonthCalendarGrid(year, monthIndex) {
       isPrevMonth: false,
       isNextMonth: false,
       isToday: dateStr === todayStr,
-      isWeekend: dayOfWeekIdx >= 5,
+      isWeekend: off(dayOfWeekIdx),
     });
   }
 
@@ -168,7 +170,7 @@ export function getMonthCalendarGrid(year, monthIndex) {
       isCurrentMonth: false,
       isPrevMonth: false,
       isNextMonth: true,
-      isWeekend: dayOfWeekIdx >= 5,
+      isWeekend: off(dayOfWeekIdx),
     });
   }
 
@@ -187,8 +189,9 @@ export function getClassesForDate(dateStr, scheduleData) {
   const dayIndex = (dateObj.getDay() + 6) % 7; // 0 = Monday, 6 = Sunday
   const dayName = WEEKDAYS[dayIndex];
 
+  /* the board only knows the configured teaching days; nothing runs on the others */
   const configDays = scheduleData.days || [];
-  const isTeachingDay = configDays.includes(dayName);
+  if (configDays.length && !configDays.includes(dayName)) return [];
 
   const classes = [];
 
@@ -222,7 +225,7 @@ export function getClassesForDate(dateStr, scheduleData) {
         if (startRaw && endRaw) {
           const meridiem = h => {
             const hr = parseInt(h.split(':')[0], 10);
-            return hr === 12 || hr <= 8 ? 'PM' : 'AM';
+            return hr >= 12 || hr <= 7 ? 'PM' : 'AM';   // 8–11 morning; 12 and 1–7 afternoon
           };
           timeLabel = `${startRaw} ${meridiem(startRaw)} – ${endRaw} ${meridiem(endRaw)}`;
         }
