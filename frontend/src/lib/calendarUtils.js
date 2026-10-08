@@ -181,8 +181,16 @@ export function getMonthCalendarGrid(year, monthIndex, teachingDays = []) {
  * Extracts and derives all scheduled sessions running on a specific calendar date (dateStr).
  * Correctly checks batch tentative date ranges and individual session dates.
  */
+/* The holiday covering `dateStr`, if any (exceptions come with /api/schedule). */
+export function holidayOn(dateStr, exceptions = []) {
+  return exceptions.find(e => e.type === 'holiday' && e.date <= dateStr && (e.endDate || e.date) >= dateStr) || null;
+}
+
 export function getClassesForDate(dateStr, scheduleData) {
   if (!dateStr || !scheduleData) return [];
+  /* a holiday stops every class that day */
+  if (holidayOn(dateStr, scheduleData.exceptions)) return [];
+  const dayEx = new Map((scheduleData.exceptions || []).filter(e => e.date === dateStr && e.sessionId).map(e => [e.sessionId, e]));
 
   const [y, m, d] = dateStr.split('-').map(Number);
   const dateObj = new Date(y, m - 1, d);
@@ -235,7 +243,14 @@ export function getClassesForDate(dateStr, scheduleData) {
         ? `Slot ${minSlot + 1}–${maxSlot + 1}`
         : `Slot ${minSlot + 1}`;
 
+      /* one-off changes for this class on this date */
+      const ex = dayEx.get(String(s._id));
+      const swap = list => (ex?.type === 'substitute' ? list.map(n => (n === ex.fromTrainer ? ex.toTrainer : n)) : list);
+
       classes.push({
+        cancelled: ex?.type === 'cancel',
+        cancelReason: ex?.type === 'cancel' ? ex.label || '' : '',
+        substitute: ex?.type === 'substitute' ? { from: ex.fromTrainer, to: ex.toTrainer, reason: ex.label || '' } : null,
         batchId: batch.id || batch._id || batch.name,
         batchName: batch.name,
         group: batch.group,
@@ -247,8 +262,8 @@ export function getClassesForDate(dateStr, scheduleData) {
         slotStart: minSlot,
         slotLabel,
         time: timeLabel,
-        mainTrainers: s.mainTrainers || [],
-        supportTrainers: s.supportTrainers || [],
+        mainTrainers: swap(s.mainTrainers || []),
+        supportTrainers: swap(s.supportTrainers || []),
         startDate: sessionStart,
         endDate: sessionEnd,
       });
@@ -285,7 +300,8 @@ export function getMonthStats(year, monthIndex, scheduleData, filterGroup = 'All
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    let classes = getClassesForDate(dateStr, scheduleData);
+    /* a cancelled class still shows on the calendar, but it is not a class held */
+    let classes = getClassesForDate(dateStr, scheduleData).filter(c => !c.cancelled);
 
     if (filterGroup !== 'All') {
       classes = classes.filter(c => c.group === filterGroup);

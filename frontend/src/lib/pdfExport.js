@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { abbreviateVenue } from './abbreviate.js';
 import { calculateUniqueStudents } from './studentStats.js';
+import { getClassesForDate, holidayOn } from './calendarUtils.js';
 
 const BRAND_ACCENT = [0, 71, 171];      // #0047AB cobalt
 const DARK_INK = [10, 10, 10];          // #0A0A0A
@@ -760,52 +761,27 @@ export function exportMonthCalendarPDF(schedule, year, monthIndex, filterGroup =
     const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const dateObj = new Date(year, monthIndex, d);
     const dayOfWeek = weekdays[(dateObj.getDay() + 6) % 7];
-    /* only the configured teaching days run classes — same rule as the on-screen calendar */
-    const teaching = !(schedule.days || []).length || schedule.days.includes(dayOfWeek);
-
-    // Find active classes on this date
-    const dayClasses = [];
-    for (const b of teaching ? schedule.batches || [] : []) {
-      if (filterGroup !== 'All' && b.group !== filterGroup) continue;
-
-      // Check tentative date window
-      if (b.startDate && dateStr < b.startDate) continue;
-      if (b.endDate && dateStr > b.endDate) continue;
-
-      for (const s of (b.sessions || [])) {
-        if (s.day !== dayOfWeek) continue;
-        const sessionStart = s.startDate || b.startDate || '';
-        const sessionEnd = s.endDate || b.endDate || '';
-        if (sessionStart && dateStr < sessionStart) continue;
-        if (sessionEnd && dateStr > sessionEnd) continue;
-
-        const slots = [...(s.slots || [])].sort((a, b) => a - b);
-        let timeStr = '';
-        if (schedule.slots && slots.length) {
-          const s1 = String(schedule.slots[slots[0]] || '').split(/[–-]/)[0].trim();
-          const s2 = String(schedule.slots[slots[slots.length - 1]] || '').split(/[–-]/).pop().trim();
-          if (s1 && s2) timeStr = `${s1} – ${s2}`;
-        }
-        const slotLabel = slots.length > 1
-          ? `Slot ${slots[0] + 1}–${slots[slots.length - 1] + 1}`
-          : `Slot ${(slots[0] || 0) + 1}`;
-
-        dayClasses.push({
-          batch: b.name,
-          group: b.group,
-          dept: b.dept || '',
-          time: `${slotLabel} (${timeStr})`,
-          subject: s.subject,
-          venue: abbreviateVenue(s.venue || b.venue || 'Unassigned'),
-          main: (s.mainTrainers || []).join(', ') || 'Unassigned',
-          support: (s.supportTrainers || []).join(', ') || '—',
-        });
-
-        activeBatches.add(b.name);
-        if (s.venue || b.venue) activeVenues.add(s.venue || b.venue);
-        (s.mainTrainers || []).forEach(m => activeMentors.add(m));
-        (s.supportTrainers || []).forEach(sm => activeMentors.add(sm));
-      }
+    /* the same classes the on-screen calendar shows for this date: teaching
+       days only, batch and session dates, holidays, cancellations and
+       substitutions all applied */
+    const holiday = holidayOn(dateStr, schedule.exceptions);
+    const dayClasses = getClassesForDate(dateStr, schedule)
+      .filter(c => !c.cancelled && (filterGroup === 'All' || c.group === filterGroup))
+      .map(c => {
+        activeBatches.add(c.batchName);
+        if (c.venue && c.venue !== 'Unassigned') activeVenues.add(c.venue);
+        [...c.mainTrainers, ...c.supportTrainers].forEach(m => activeMentors.add(m));
+        return {
+          batch: c.batchName, group: c.group, dept: c.dept,
+          time: `${c.slotLabel} (${c.time})`,
+          subject: c.subject,
+          venue: abbreviateVenue(c.venue || 'Unassigned'),
+          main: (c.mainTrainers.join(', ') || 'Unassigned') + (c.substitute ? ` (covering ${c.substitute.from})` : ''),
+          support: c.supportTrainers.join(', ') || '—',
+        };
+      });
+    if (holiday && schedule.days?.includes(dayOfWeek)) {
+      rows.push([`${monthName.slice(0, 3)} ${d}`, dayOfWeek, `Holiday — ${holiday.label}`, '', '', '', '', '', '']);
     }
 
     if (dayClasses.length > 0) {

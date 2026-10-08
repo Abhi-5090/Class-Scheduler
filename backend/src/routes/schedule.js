@@ -5,6 +5,9 @@ import Trainer from '../models/Trainer.js';
 import Venue from '../models/Venue.js';
 import Batch from '../models/Batch.js';
 import Activity from '../models/Activity.js';
+import Exception from '../models/Exception.js';
+import { today } from '../services/dates.js';
+import { addDays } from '../services/occurrences.js';
 import { buildSchedule } from '../services/derive.js';
 import { wrap } from '../middleware/asyncRoute.js';
 
@@ -25,9 +28,27 @@ export async function loadSchedule() {
   return buildSchedule({ config, groups, trainers, venues, batches, activities });
 }
 
-/* Public. This is what the board reads — no auth, everybody sees the schedule. */
+/* Public. This is what the board reads — no auth, everybody sees the schedule.
+   Holidays and class exceptions from two months back to a year ahead ride
+   along for the calendar, with only the fields a visitor needs. */
+/* The board is public and unauthenticated, so its answer is kept for a few
+   seconds instead of rebuilt from every collection on every request; any
+   successful change made through the console clears it at once (server.js). */
+const TTL_MS = 15000;
+let cached = null;          // { at, body }
+export const invalidateSchedule = () => { cached = null; };
+
 router.get('/', wrap(async (_req, res) => {
-  res.json(await loadSchedule());
+  if (cached && Date.now() - cached.at < TTL_MS) return res.json(cached.body);
+  const on = today();
+  const [data, exceptions] = await Promise.all([
+    loadSchedule(),
+    Exception.find({ date: { $lte: addDays(on, 366) }, $or: [{ date: { $gte: addDays(on, -62) } }, { endDate: { $gte: addDays(on, -62) } }] },
+      { type: 1, date: 1, endDate: 1, label: 1, batch: 1, sessionId: 1, day: 1, slots: 1, subject: 1, fromTrainer: 1, toTrainer: 1 }).sort({ date: 1 }).lean(),
+  ]);
+  const body = { ...data, exceptions: exceptions.map(({ _id, sessionId, ...e }) => ({ id: String(_id), sessionId: sessionId ? String(sessionId) : null, ...e })) };
+  cached = { at: Date.now(), body };
+  res.json(body);
 }));
 
 export default router;

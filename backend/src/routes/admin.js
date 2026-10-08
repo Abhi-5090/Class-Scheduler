@@ -6,52 +6,22 @@ import Trainer from '../models/Trainer.js';
 import Venue from '../models/Venue.js';
 import Batch from '../models/Batch.js';
 import Activity from '../models/Activity.js';
-import { requireAdmin } from '../middleware/auth.js';
+import Exception from '../models/Exception.js';
+import User from '../models/User.js';
+import Notification from '../models/Notification.js';
+import { requireAuth } from '../middleware/auth.js';
 import { wrap } from '../middleware/asyncRoute.js';
-import { isIsoDate, rangesOverlap, rangeStatus, sessionRange } from '../services/dates.js';
+import { rangesOverlap, rangeStatus, sessionRange, today } from '../services/dates.js';
+import { audit, diff, plain } from '../services/audit.js';
+import { batchChanges, notifyTrainers } from '../services/notify.js';
+import {
+  str, fail, httpError, text, count, orderNum, date, dateRange, validId, EMAIL_RE, normTrack,
+  atomically, ADMIN, COORD, wantsNotify, lockSchedule, CI,
+} from './_shared.js';
 
 const router = Router();
-router.use(requireAdmin);          // nothing below this line is public
-
-const str = v => String(v ?? '').trim();
-const fail = (res, status, error) => res.status(status).json({ error });
-
-/* Thrown from deep inside validation; the error middleware turns `status`
-   into the response, so a helper can refuse without threading `res` around. */
-const httpError = (status, message) => Object.assign(new Error(message), { status });
-
-/* Every free-text field has a ceiling, so nobody can park megabytes in a name. */
-const LIMITS = { name: 120, subject: 120, note: 500, label: 200, email: 254, phone: 32, dept: 80, slot: 40, day: 20 };
-const text = (v, kind, what = kind) => {
-  const s = str(v);
-  if (s.length > LIMITS[kind]) throw httpError(400, `${what[0].toUpperCase()}${what.slice(1)} is too long (max ${LIMITS[kind]} characters)`);
-  return s;
-};
-const count = (v, what) => {
-  if (v === undefined || v === null || v === '') return 0;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 0 || n > 100000) throw httpError(400, `${what} must be a whole number`);
-  return n;
-};
-const orderNum = v => {
-  const n = Number(v);
-  if (!Number.isFinite(n)) throw httpError(400, 'Order must be a number');
-  return n;
-};
-const date = (v, what) => {
-  const s = str(v);
-  if (!isIsoDate(s)) throw httpError(400, `${what} must be a date (YYYY-MM-DD)`);
-  return s;
-};
-const dateRange = (start, end, what) => {
-  if (start && end && end < start) throw httpError(400, `${what}: the end date is before the start date`);
-};
-const validId = id => typeof id === 'string' && mongoose.isValidObjectId(id) && /^[a-f\d]{24}$/i.test(id);
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const normTrack = v => (['non-teaching', 'non-technical', 'non-tech'].includes(str(v).toLowerCase()) ? 'non-teaching' : 'teaching');
-
-/* Runs `fn(session)` as one all-or-nothing transaction (Atlas replica set). */
-const atomically = fn => mongoose.connection.transaction(fn);
+/* nothing below is public; each route then says which roles may use it */
+router.use(requireAuth());
 
 /* ───────────────────────── config: the period grid ───────────────────────── */
 
@@ -71,7 +41,7 @@ router.get('/config', wrap(async (_req, res) => {
  * removals and reorders otherwise move every session and activity with them,
  * all in one transaction so the grid and the data can never disagree.
  */
-router.put('/config', wrap(async (req, res) => {
+router.put('/config', ADMIN, wrap(async (req, res) => {
   const old = await Config.findOne({ key: 'default' }).lean();
   if (!old) return fail(res, 503, 'Schedule is not initialised — run `npm run seed`');
 
@@ -113,29 +83,42 @@ router.put('/config', wrap(async (req, res) => {
     return fail(res, 400, 'Lunch slot must be one of the time slots');
   }
 
-  /* a class on a removed period or day blocks the change */
-  const [batches, activities] = await Promise.all([Batch.find().lean(), Activity.find().lean()]);
-  const orphans = [];
-  for (const b of batches) {
-    for (const s of b.sessions || []) {
-      const lost = s.slots.filter(i => !slotMap.has(i)).map(i => `slot ${i + 1}`);
-      if (!dayMap.has(s.day)) orphans.push(`${b.name} — ${s.subject} on ${s.day} (day removed)`);
-      else if (lost.length) orphans.push(`${b.name} — ${s.subject} on ${s.day} (${lost.join(', ')} removed)`);
-    }
-  }
-  if (orphans.length) {
-    return fail(res, 409, `Move or delete these sessions first — they use a period or day being removed: ${[...new Set(orphans)].join('; ')}`);
-  }
-
-  /* work notes on a removed period/day go with it; the rest move along */
-  const moved = [], dropped = [];
-  for (const a of activities) {
-    const day = dayMap.get(a.day), slot = slotMap.get(a.slot);
-    if (day === undefined || slot === undefined) dropped.push(a._id);
-    else if (day !== a.day || slot !== a.slot) moved.push({ ...a, day, slot });
-  }
-
+  /* read everything under the schedule lock, so an edit saved meanwhile is
+     neither overwritten nor brought back by this remap */
+  let dropped = [], moved = [];
   await atomically(async session => {
+    await lockSchedule(session);
+    /* the rows say where they came from in the grid as it was loaded; if
+       someone changed the grid since, those positions no longer hold */
+    const now = await Config.findOne({ key: 'default' }).session(session).lean();
+    if (JSON.stringify([now.slots, now.days]) !== JSON.stringify([old.slots, old.days])) {
+      throw httpError(409, 'Someone else changed the time slots meanwhile — reload the page and make your change again');
+    }
+    const [batches, activities, exceptions] = await Promise.all([
+      Batch.find().session(session).lean(), Activity.find().session(session).lean(),
+      Exception.find({ sessionId: { $ne: null } }).session(session).lean(),
+    ]);
+    /* a class on a removed period or day blocks the change */
+    const orphans = [];
+    for (const b of batches) {
+      for (const s of b.sessions || []) {
+        const lost = s.slots.filter(i => !slotMap.has(i)).map(i => `slot ${i + 1}`);
+        if (!dayMap.has(s.day)) orphans.push(`${b.name} — ${s.subject} on ${s.day} (day removed)`);
+        else if (lost.length) orphans.push(`${b.name} — ${s.subject} on ${s.day} (${lost.join(', ')} removed)`);
+      }
+    }
+    if (orphans.length) {
+      throw httpError(409, `Move or delete these sessions first — they use a period or day being removed: ${[...new Set(orphans)].join('; ')}`);
+    }
+
+    /* work notes on a removed period/day go with it; the rest move along */
+    moved = []; dropped = [];
+    for (const a of activities) {
+      const day = dayMap.get(a.day), slot = slotMap.get(a.slot);
+      if (day === undefined || slot === undefined) dropped.push(a._id);
+      else if (day !== a.day || slot !== a.slot) moved.push({ ...a, day, slot });
+    }
+
     await Config.updateOne({ key: 'default' }, { slots, days, lunchIndex }, { session });
 
     const batchOps = [];
@@ -155,6 +138,19 @@ router.put('/config', wrap(async (req, res) => {
     const gone = [...dropped, ...moved.map(a => a._id)];
     if (gone.length) await Activity.deleteMany({ _id: { $in: gone } }, { session });
     if (moved.length) await Activity.insertMany(moved, { session });
+
+    /* class exceptions keep a snapshot of the class's day and periods for display */
+    const exOps = exceptions.filter(e => dayMap.has(e.day)).map(e => ({ updateOne: {
+      filter: { _id: e._id },
+      update: { $set: { day: dayMap.get(e.day), slots: [...new Set(e.slots.map(i => slotMap.get(i)).filter(i => i !== undefined))].sort((x, y) => x - y) } },
+    } }));
+    if (exOps.length) await Exception.bulkWrite(exOps, { session });
+
+    await audit(req, {
+      action: 'update', entity: 'config', name: 'Time slots & days',
+      summary: `${slots.length} periods × ${days.length} days, lunch at ${slots[lunchIndex]}${dropped.length ? ` · ${dropped.length} logged activities cleared` : ''}`,
+      changes: diff({ slots: old.slots, days: old.days, lunchIndex: old.lunchIndex }, { slots, days, lunchIndex }),
+    }, session);
   });
 
   const config = await Config.findOne({ key: 'default' }).lean();
@@ -163,31 +159,37 @@ router.put('/config', wrap(async (req, res) => {
 
 /* ───────────────────────── year groups ───────────────────────── */
 
-router.get('/groups', wrap(async (_req, res) => {
+router.get('/groups', COORD, wrap(async (_req, res) => {
   res.json(await YearGroup.find().sort({ order: 1 }).lean());
 }));
 
-router.post('/groups', wrap(async (req, res) => {
+router.post('/groups', ADMIN, wrap(async (req, res) => {
   const name = text(req.body?.name, 'name', 'year group name');
   if (!name) return fail(res, 400, 'Year group name is required');
-  if (await YearGroup.findOne({ name })) return fail(res, 409, `"${name}" already exists`);
+  if (await YearGroup.findOne({ name }).collation(CI)) return fail(res, 409, `"${name}" already exists`);
 
   const last = await YearGroup.findOne().sort({ order: -1 }).lean();
-  res.status(201).json(await YearGroup.create({
-    name,
-    order: req.body?.order !== undefined ? orderNum(req.body.order) : ((last?.order ?? -1) + 1),
-    pending: !!req.body?.pending,
-    note: text(req.body?.note, 'note'),
-  }));
+  let created;
+  await atomically(async session => {
+    [created] = await YearGroup.create([{
+      name,
+      order: req.body?.order !== undefined ? orderNum(req.body.order) : ((last?.order ?? -1) + 1),
+      pending: !!req.body?.pending,
+      note: text(req.body?.note, 'note'),
+    }], { session });
+    await audit(req, { action: 'create', entity: 'group', entityId: created._id, name, changes: diff({}, plain(created)) }, session);
+  });
+  res.status(201).json(created);
 }));
 
-router.put('/groups/:id', wrap(async (req, res) => {
+router.put('/groups/:id', ADMIN, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Year group not found');
   const group = await YearGroup.findById(req.params.id);
   if (!group) return fail(res, 404, 'Year group not found');
+  const before = plain(group);
 
   const name = text(req.body?.name, 'name', 'year group name') || group.name;
-  if (name !== group.name && await YearGroup.findOne({ name })) return fail(res, 409, `"${name}" already exists`);
+  if (name !== group.name && await YearGroup.findOne({ name, _id: { $ne: group._id } }).collation(CI)) return fail(res, 409, `"${name}" already exists`);
   const oldName = group.name;
 
   group.name = name;
@@ -200,11 +202,13 @@ router.put('/groups/:id', wrap(async (req, res) => {
   await atomically(async session => {
     if (name !== oldName) await Batch.updateMany({ group: oldName }, { group: name }, { session });
     await group.save({ session });
+    const changes = diff(before, plain(group));
+    if (changes.length) await audit(req, { action: 'update', entity: 'group', entityId: group._id, name, changes }, session);
   });
   res.json(group);
 }));
 
-router.delete('/groups/:id', wrap(async (req, res) => {
+router.delete('/groups/:id', ADMIN, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Year group not found');
   const group = await YearGroup.findById(req.params.id);
   if (!group) return fail(res, 404, 'Year group not found');
@@ -212,7 +216,10 @@ router.delete('/groups/:id', wrap(async (req, res) => {
   const used = await Batch.countDocuments({ group: group.name });
   if (used) return fail(res, 409, `${group.name} still has ${used} batch(es) — move or delete those first`);
 
-  await group.deleteOne();
+  await atomically(async session => {
+    await group.deleteOne({ session });
+    await audit(req, { action: 'delete', entity: 'group', entityId: group._id, name: group.name, changes: diff(plain(group), {}) }, session);
+  });
   res.json({ ok: true });
 }));
 
@@ -226,29 +233,35 @@ const contact = body => {
   return { email, phone };
 };
 
-router.get('/trainers', wrap(async (_req, res) => {
+router.get('/trainers', COORD, wrap(async (_req, res) => {
   res.json(await Trainer.find().sort({ name: 1 }).lean());
 }));
 
-router.post('/trainers', wrap(async (req, res) => {
+router.post('/trainers', ADMIN, wrap(async (req, res) => {
   const name = text(req.body?.name, 'name', 'trainer name');
   if (!name) return fail(res, 400, 'Trainer name is required');
-  if (await Trainer.findOne({ name })) return fail(res, 409, `${name} is already on the list`);
+  if (await Trainer.findOne({ name }).collation(CI)) return fail(res, 409, `${name} is already on the list`);
 
-  res.status(201).json(await Trainer.create({
-    name, ...contact(req.body),
-    track: normTrack(req.body?.track),
-    active: req.body?.active !== false,
-  }));
+  let created;
+  await atomically(async session => {
+    [created] = await Trainer.create([{
+      name, ...contact(req.body),
+      track: normTrack(req.body?.track),
+      active: req.body?.active !== false,
+    }], { session });
+    await audit(req, { action: 'create', entity: 'trainer', entityId: created._id, name, changes: diff({}, plain(created)) }, session);
+  });
+  res.status(201).json(created);
 }));
 
-router.put('/trainers/:id', wrap(async (req, res) => {
+router.put('/trainers/:id', ADMIN, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Trainer not found');
   const trainer = await Trainer.findById(req.params.id);
   if (!trainer) return fail(res, 404, 'Trainer not found');
+  const before = plain(trainer);
 
   const name = text(req.body?.name, 'name', 'trainer name') || trainer.name;
-  if (name !== trainer.name && await Trainer.findOne({ name })) return fail(res, 409, `${name} is already on the list`);
+  if (name !== trainer.name && await Trainer.findOne({ name, _id: { $ne: trainer._id } }).collation(CI)) return fail(res, 409, `${name} is already on the list`);
   const oldName = trainer.name;
 
   trainer.name = name;
@@ -259,8 +272,8 @@ router.put('/trainers/:id', wrap(async (req, res) => {
   if (req.body?.track !== undefined) trainer.track = normTrack(req.body.track);
   if (req.body?.active !== undefined) trainer.active = !!req.body.active;
 
-  /* sessions and logged activities both hold trainer names, so a rename has
-     to reach into both — in one transaction, so nothing is left half-renamed */
+  /* sessions, logged activities and exceptions all hold trainer names, so a
+     rename reaches into every one — in one transaction, nothing half-renamed */
   await atomically(async session => {
     if (name !== oldName) {
       await Batch.updateMany({ 'sessions.mainTrainers': oldName },
@@ -270,19 +283,25 @@ router.put('/trainers/:id', wrap(async (req, res) => {
         { $set: { 'sessions.$[s].supportTrainers.$[t]': name } },
         { arrayFilters: [{ 's.supportTrainers': oldName }, { t: oldName }], session });
       await Activity.updateMany({ trainer: oldName }, { trainer: name }, { session });
+      await Exception.updateMany({ fromTrainer: oldName }, { fromTrainer: name }, { session });
+      await Exception.updateMany({ toTrainer: oldName }, { toTrainer: name }, { session });
+      await Notification.updateMany({ trainer: oldName }, { trainer: name }, { session });
     }
     await trainer.save({ session });
+    const changes = diff(before, plain(trainer));
+    if (changes.length) await audit(req, { action: 'update', entity: 'trainer', entityId: trainer._id, name, changes }, session);
   });
   res.json(trainer);
 }));
 
-router.delete('/trainers/:id', wrap(async (req, res) => {
+router.delete('/trainers/:id', ADMIN, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Trainer not found');
   const trainer = await Trainer.findById(req.params.id);
   if (!trainer) return fail(res, 404, 'Trainer not found');
 
   /* Pull them out of every session too, otherwise the derived grids would
-     still show a trainer who no longer exists. */
+     still show a trainer who no longer exists. A linked sign-in account is
+     switched off rather than left pointing at nobody. */
   let sessionsTouched = 0;
   await atomically(async session => {
     const pulled = await Batch.updateMany({}, {
@@ -290,34 +309,48 @@ router.delete('/trainers/:id', wrap(async (req, res) => {
     }, { session });
     sessionsTouched = pulled.modifiedCount;
     await Activity.deleteMany({ trainer: trainer.name }, { session });
+    await Exception.deleteMany({ $or: [{ fromTrainer: trainer.name }, { toTrainer: trainer.name }] }, { session });
+    await User.updateMany({ trainer: trainer._id }, { $set: { trainer: null, active: false }, $inc: { tokenVersion: 1 } }, { session });
+    /* keep the email history, but never show it to a future trainer of the same name */
+    await Notification.updateMany({ trainer: trainer.name }, { trainer: `${trainer.name} (deleted)` }, { session });
     await trainer.deleteOne({ session });
+    await audit(req, {
+      action: 'delete', entity: 'trainer', entityId: trainer._id, name: trainer.name,
+      summary: `Removed from ${sessionsTouched} batch(es)`, changes: diff(plain(trainer), {}),
+    }, session);
   });
   res.json({ ok: true, sessionsTouched });
 }));
 
 /* ───────────────────────── venues ───────────────────────── */
 
-router.get('/venues', wrap(async (_req, res) => {
+router.get('/venues', COORD, wrap(async (_req, res) => {
   res.json(await Venue.find().sort({ name: 1 }).lean());
 }));
 
-router.post('/venues', wrap(async (req, res) => {
+router.post('/venues', ADMIN, wrap(async (req, res) => {
   const name = text(req.body?.name, 'name', 'hall name');
   if (!name) return fail(res, 400, 'Hall name is required');
-  if (await Venue.findOne({ name })) return fail(res, 409, `"${name}" already exists`);
+  if (await Venue.findOne({ name }).collation(CI)) return fail(res, 409, `"${name}" already exists`);
 
-  res.status(201).json(await Venue.create({
-    name, capacity: count(req.body?.capacity, 'Capacity'), active: req.body?.active !== false,
-  }));
+  let created;
+  await atomically(async session => {
+    [created] = await Venue.create([{
+      name, capacity: count(req.body?.capacity, 'Capacity'), active: req.body?.active !== false,
+    }], { session });
+    await audit(req, { action: 'create', entity: 'venue', entityId: created._id, name, changes: diff({}, plain(created)) }, session);
+  });
+  res.status(201).json(created);
 }));
 
-router.put('/venues/:id', wrap(async (req, res) => {
+router.put('/venues/:id', ADMIN, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Hall not found');
   const venue = await Venue.findById(req.params.id);
   if (!venue) return fail(res, 404, 'Hall not found');
+  const before = plain(venue);
 
   const name = text(req.body?.name, 'name', 'hall name') || venue.name;
-  if (name !== venue.name && await Venue.findOne({ name })) return fail(res, 409, `"${name}" already exists`);
+  if (name !== venue.name && await Venue.findOne({ name, _id: { $ne: venue._id } }).collation(CI)) return fail(res, 409, `"${name}" already exists`);
   const oldName = venue.name;
 
   venue.name = name;
@@ -334,11 +367,13 @@ router.put('/venues/:id', wrap(async (req, res) => {
       );
     }
     await venue.save({ session });
+    const changes = diff(before, plain(venue));
+    if (changes.length) await audit(req, { action: 'update', entity: 'venue', entityId: venue._id, name, changes }, session);
   });
   res.json(venue);
 }));
 
-router.delete('/venues/:id', wrap(async (req, res) => {
+router.delete('/venues/:id', ADMIN, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Hall not found');
   const venue = await Venue.findById(req.params.id);
   if (!venue) return fail(res, 404, 'Hall not found');
@@ -352,6 +387,10 @@ router.delete('/venues/:id', wrap(async (req, res) => {
     );
     sessionsUnassigned = freed.modifiedCount;
     await venue.deleteOne({ session });
+    await audit(req, {
+      action: 'delete', entity: 'venue', entityId: venue._id, name: venue.name,
+      summary: `${sessionsUnassigned} batch(es) left without this hall`, changes: diff(plain(venue), {}),
+    }, session);
   });
   res.json({ ok: true, sessionsUnassigned });
 }));
@@ -360,27 +399,30 @@ router.delete('/venues/:id', wrap(async (req, res) => {
 
 /*
  * Cleans and checks a batch's sessions. Throws a 400/409 the caller sees as-is.
- * `batch` is { id, startDate, endDate } of the batch being saved — the dates a
- * session without its own inherits, and the id so the batch never clashes
- * with its own stored copy.
+ * `batch` is { id, startDate, endDate, existingIds } of the batch being saved —
+ * the dates a session without its own inherits, the id so the batch never
+ * clashes with its own stored copy, and the ids of its current sessions so an
+ * edited session keeps its identity (exceptions and change notices hang off it).
+ * `others`, when given, replaces the database read of every other batch — the
+ * importer uses it to check a whole file of batches against each other.
  *
  * Double-booking is refused here rather than discovered later on the
  * dashboard: a trainer or a hall cannot be in two classes on the same day and
  * period while those classes' date ranges overlap. Back-to-back batches
  * (one ending in September, the next starting in October) are fine.
  */
-async function validateSessions(raw, batch) {
+export async function validateSessions(raw, batch, { others: givenOthers, config: givenConfig, venuesByName: givenVenues, trainersByName: givenTrainers, session = null } = {}) {
   if (!Array.isArray(raw)) throw httpError(400, 'Sessions must be a list');
   if (raw.length > 60) throw httpError(400, 'A batch can have at most 60 sessions');
 
   const [config, venueDocs, trainerDocs] = await Promise.all([
-    Config.findOne({ key: 'default' }).lean(),
-    Venue.find({}, { name: 1, active: 1 }).lean(),
-    Trainer.find({}, { name: 1, active: 1 }).lean(),
+    givenConfig || Config.findOne({ key: 'default' }).session(session).lean(),
+    givenVenues ? null : Venue.find({}, { name: 1, active: 1 }).session(session).lean(),
+    givenTrainers ? null : Trainer.find({}, { name: 1, active: 1 }).session(session).lean(),
   ]);
   if (!config) throw httpError(503, 'Schedule is not initialised — run `npm run seed`');
-  const venuesByName = new Map(venueDocs.map(v => [v.name, v]));
-  const trainersByName = new Map(trainerDocs.map(t => [t.name, t]));
+  const venuesByName = givenVenues || new Map(venueDocs.map(v => [v.name, v]));
+  const trainersByName = givenTrainers || new Map(trainerDocs.map(t => [t.name, t]));
 
   const sessions = [];
   for (const [n, s] of raw.entries()) {
@@ -402,7 +444,8 @@ async function validateSessions(raw, batch) {
     if (venue) {
       const v = venuesByName.get(venue);
       if (!v) throw httpError(400, `${where}: "${venue}" is not a known hall`);
-      if (v.active === false) throw httpError(400, `${where}: "${venue}" is marked inactive — reactivate it or pick another hall`);
+      /* an inactive hall may stay where it already is, but cannot be newly picked */
+      if (v.active === false && !batch.existingVenues?.has(venue)) throw httpError(400, `${where}: "${venue}" is marked inactive — reactivate it or pick another hall`);
     }
 
     const clean = list => [...new Set((Array.isArray(list) ? list : []).map(x => text(x, 'name', 'trainer name')).filter(Boolean))];
@@ -411,18 +454,21 @@ async function validateSessions(raw, batch) {
     for (const t of [...mainTrainers, ...supportTrainers]) {
       const doc = trainersByName.get(t);
       if (!doc) throw httpError(400, `${where}: "${t}" is not on the trainer list`);
-      if (doc.active === false) throw httpError(400, `${where}: ${t} is marked inactive — reactivate them or pick someone else`);
+      if (doc.active === false && !batch.existingPeople?.has(t)) throw httpError(400, `${where}: ${t} is marked inactive — reactivate them or pick someone else`);
     }
 
     const startDate = date(s?.startDate, `${where} start date`);
     const endDate = date(s?.endDate, `${where} end date`);
     dateRange(startDate, endDate, where);
 
-    sessions.push({ day, slots, subject, venue, mainTrainers, supportTrainers, startDate, endDate });
+    /* keep the session's identity across edits; a stranger's id is ignored */
+    const sid = String(s?._id || '');
+    const keep = validId(sid) && batch.existingIds?.has(sid) && !sessions.some(x => String(x._id) === sid);
+    sessions.push({ ...(keep ? { _id: new mongoose.Types.ObjectId(sid) } : {}), day, slots, subject, venue, mainTrainers, supportTrainers, startDate, endDate });
   }
 
   /* ── double-booking ── */
-  const others = await Batch.find(batch.id ? { _id: { $ne: batch.id } } : {}, { name: 1, startDate: 1, endDate: 1, sessions: 1 }).lean();
+  const others = givenOthers || await Batch.find(batch.id ? { _id: { $ne: batch.id } } : {}, { name: 1, startDate: 1, endDate: 1, sessions: 1 }).session(session).lean();
   const existing = others.flatMap(b => (b.sessions || []).map(s => ({ s, owner: b.name, ...sessionRange(s, b) })));
 
   const clashes = [];
@@ -448,6 +494,21 @@ async function validateSessions(raw, batch) {
       if (s.venue && s.venue === o.s.venue) clashes.push(say(s.venue, s, shared[0], o.owner));
     }
   });
+  /* a trainer covering someone else's class on a date is booked then too */
+  const allPeople = [...new Set(sessions.flatMap(s => [...s.mainTrainers, ...s.supportTrainers]))];
+  if (allPeople.length) {
+    const covers = await Exception.find({ type: 'substitute', toTrainer: { $in: allPeople }, date: { $gte: today() } }).session(session).lean();
+    for (const s of sessions) {
+      const mine = sessionRange(s, batch);
+      for (const e of covers) {
+        if (e.day !== s.day || String(e.sessionId) === String(s._id || '')) continue;
+        if (![...s.mainTrainers, ...s.supportTrainers].includes(e.toTrainer)) continue;
+        if (!e.slots.some(x => s.slots.includes(x))) continue;
+        if (!rangesOverlap(mine.start, mine.end, e.date, e.date)) continue;
+        clashes.push(`${e.toTrainer} on ${e.day} ${config.slots[e.slots[0]]} — covering ${e.batch} on ${e.date}`);
+      }
+    }
+  }
   if (clashes.length) {
     const list = [...new Set(clashes)];
     throw httpError(409, `Double-booking — not saved: ${list.slice(0, 8).join('; ')}${list.length > 8 ? `; and ${list.length - 8} more` : ''}`);
@@ -457,7 +518,7 @@ async function validateSessions(raw, batch) {
 }
 
 /* Reads a batch's own fields from a request body; `current` fills gaps on update. */
-function batchFields(body, current = {}) {
+export function batchFields(body, current = {}) {
   const pick = (k, fn) => (body?.[k] !== undefined ? fn(body[k]) : current[k]);
   const out = {
     name: pick('name', v => text(v, 'name', 'batch name')) || current.name || '',
@@ -471,36 +532,72 @@ function batchFields(body, current = {}) {
   return out;
 }
 
-router.get('/batches', wrap(async (_req, res) => {
+/*
+ * Exceptions hang off a batch's sessions. After the batch changes: those on a
+ * session that no longer exists, or that moved to another weekday, or whose
+ * substituted trainer left the class, can no longer apply and are removed;
+ * the rest get the new name and class snapshot. Returns how many went.
+ */
+export async function reconcileExceptions(batchDoc, session) {
+  const list = await Exception.find({ batchId: batchDoc._id }, null, { session }).lean();
+  if (!list.length) return 0;
+  const byId = new Map((batchDoc.sessions || []).map(s => [String(s._id), s]));
+  const gone = [], ops = [];
+  for (const e of list) {
+    const s = byId.get(String(e.sessionId));
+    const people = s ? [...(s.mainTrainers || []), ...(s.supportTrainers || [])] : [];
+    if (!s || s.day !== e.day || (e.type === 'substitute' && (!people.includes(e.fromTrainer) || people.includes(e.toTrainer)))) {
+      gone.push(e._id);
+    } else {
+      ops.push({ updateOne: { filter: { _id: e._id }, update: { $set: { batch: batchDoc.name, slots: s.slots, subject: s.subject } } } });
+    }
+  }
+  if (gone.length) await Exception.deleteMany({ _id: { $in: gone } }, { session });
+  if (ops.length) await Exception.bulkWrite(ops, { session });
+  return gone.length;
+}
+
+router.get('/batches', COORD, wrap(async (_req, res) => {
   res.json(await Batch.find().sort({ order: 1, name: 1 }).lean());
 }));
 
-router.get('/batches/:id', wrap(async (req, res) => {
+router.get('/batches/:id', COORD, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Batch not found');
   const batch = await Batch.findById(req.params.id).lean();
   if (!batch) return fail(res, 404, 'Batch not found');
   res.json(batch);
 }));
 
-router.post('/batches', wrap(async (req, res) => {
+router.post('/batches', COORD, wrap(async (req, res) => {
   const f = batchFields(req.body);
   if (!f.name) return fail(res, 400, 'Batch name is required');
-  if (await Batch.findOne({ name: f.name })) return fail(res, 409, `"${f.name}" already exists`);
-  if (!await YearGroup.findOne({ name: f.group })) return fail(res, 400, 'Pick an existing year group');
 
-  const sessions = await validateSessions(req.body?.sessions ?? [], { startDate: f.startDate, endDate: f.endDate });
-  const last = await Batch.findOne().sort({ order: -1 }).lean();
-
+  /* the checks and the write happen together, under the schedule lock, so a
+     simultaneous save elsewhere cannot slip a clash between them */
   let created, activitiesReplaced = 0;
   await atomically(async session => {
+    await lockSchedule(session);
+    if (await Batch.findOne({ name: f.name }).collation(CI).session(session)) throw httpError(409, `"${f.name}" already exists`);
+    if (!await YearGroup.findOne({ name: f.group }).session(session)) throw httpError(400, 'Pick an existing year group');
+    const sessions = await validateSessions(req.body?.sessions ?? [], { startDate: f.startDate, endDate: f.endDate }, { session });
+    const last = await Batch.findOne().sort({ order: -1 }).session(session).lean();
     [created] = await Batch.create([{
       ...f,
       order: req.body?.order !== undefined ? orderNum(req.body.order) : ((last?.order ?? -1) + 1),
       sessions,
     }], { session });
     activitiesReplaced = await clearActivitiesUnder(sessions, session, f);
+    await audit(req, {
+      action: 'create', entity: 'batch', entityId: created._id, name: f.name,
+      summary: `${sessions.length} session(s)`, changes: diff({}, plain(created)),
+    }, session);
   });
-  res.status(201).json({ ...created.toObject(), activitiesReplaced });
+
+  const config = await Config.findOne({ key: 'default' }).lean();
+  const notified = wantsNotify(req)
+    ? await notifyTrainers(req, batchChanges(null, plain(created), config.slots), `${f.name} created`)
+    : null;
+  res.status(201).json({ ...created.toObject(), activitiesReplaced, notified });
 }));
 
 /* ids arrive from the client; only real ObjectId strings ever reach a filter */
@@ -510,58 +607,102 @@ const idList = (list, what) => {
   return list;
 };
 
-router.put('/batches/reorder', wrap(async (req, res) => {
+router.put('/batches/reorder', COORD, wrap(async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
   const ids = idList(items.map(item => item?.id || item?._id), 'items');
   await Batch.bulkWrite(items.map((item, i) => ({
     updateOne: { filter: { _id: ids[i] }, update: { $set: { order: orderNum(item.order) } } },
   })));
+  await audit(req, { action: 'update', entity: 'batch', name: 'Board order', summary: `Reordered ${ids.length} batch(es)` });
   res.json({ ok: true });
 }));
 
-router.put('/batches/reorder-group', wrap(async (req, res) => {
+router.put('/batches/reorder-group', COORD, wrap(async (req, res) => {
   const ids = idList(req.body?.orderedIds, 'orderedIds');
   await Batch.bulkWrite(ids.map((id, index) => ({
     updateOne: { filter: { _id: id }, update: { $set: { order: index } } },
   })));
+  await audit(req, { action: 'update', entity: 'batch', name: 'Board order', summary: `Reordered ${ids.length} batch(es)${req.body?.group ? ` in ${str(req.body.group).slice(0, 80)}` : ''}` });
   res.json({ ok: true });
 }));
 
-router.put('/batches/:id', wrap(async (req, res) => {
+router.put('/batches/:id', COORD, wrap(async (req, res) => {
+  if (!validId(req.params.id)) return fail(res, 404, 'Batch not found');
+
+  /* read, check and write under the schedule lock in one transaction; if a
+     simultaneous save forces a retry, everything is read afresh */
+  let batch, before, activitiesReplaced = 0, exceptionsRemoved = 0;
+  await atomically(async session => {
+    await lockSchedule(session);
+    batch = await Batch.findById(req.params.id).session(session);
+    if (!batch) throw httpError(404, 'Batch not found');
+    before = plain(batch);
+
+    const f = batchFields(req.body, before);
+    if (f.name !== batch.name && await Batch.findOne({ name: f.name, _id: { $ne: batch._id } }).collation(CI).session(session)) {
+      throw httpError(409, `"${f.name}" already exists`);
+    }
+    if (f.group !== batch.group && !await YearGroup.findOne({ name: f.group }).session(session)) throw httpError(400, 'Pick an existing year group');
+
+    /* new dates can create a clash even with the sessions untouched, so the
+       sessions are re-checked whenever either changes */
+    const datesChanged = f.startDate !== batch.startDate || f.endDate !== batch.endDate;
+    const sessionsSent = req.body?.sessions !== undefined;
+    const old = before.sessions || [];
+    const sessions = sessionsSent || datesChanged
+      ? await validateSessions(sessionsSent ? req.body.sessions : old, {
+        id: batch._id, startDate: f.startDate, endDate: f.endDate,
+        existingIds: new Set(old.map(s => String(s._id))),
+        existingPeople: new Set(old.flatMap(s => [...(s.mainTrainers || []), ...(s.supportTrainers || [])])),
+        existingVenues: new Set(old.map(s => s.venue).filter(Boolean)),
+      }, { session })
+      : null;
+
+    Object.assign(batch, f);
+    if (req.body?.order !== undefined) batch.order = orderNum(req.body.order);
+    if (sessions) batch.sessions = sessions;
+
+    await batch.save({ session });
+    const after = plain(batch);
+    if (sessions) activitiesReplaced = await clearActivitiesUnder(after.sessions, session, f);
+    exceptionsRemoved = await reconcileExceptions(after, session);
+    const changes = diff(before, after);
+    if (changes.length) {
+      await audit(req, {
+        action: 'update', entity: 'batch', entityId: batch._id, name: batch.name,
+        summary: exceptionsRemoved ? `${exceptionsRemoved} date exception(s) no longer applied and were removed` : '',
+        changes,
+      }, session);
+    }
+  });
+
+  const config = await Config.findOne({ key: 'default' }).lean();
+  const notified = wantsNotify(req)
+    ? await notifyTrainers(req, batchChanges(before, plain(batch), config.slots), `${batch.name} updated`)
+    : null;
+  res.json({ ...batch.toObject(), activitiesReplaced, exceptionsRemoved, notified });
+}));
+
+router.delete('/batches/:id', COORD, wrap(async (req, res) => {
   if (!validId(req.params.id)) return fail(res, 404, 'Batch not found');
   const batch = await Batch.findById(req.params.id);
   if (!batch) return fail(res, 404, 'Batch not found');
+  const before = plain(batch);
 
-  const f = batchFields(req.body, batch.toObject());
-  if (f.name !== batch.name && await Batch.findOne({ name: f.name })) return fail(res, 409, `"${f.name}" already exists`);
-  if (f.group !== batch.group && !await YearGroup.findOne({ name: f.group })) return fail(res, 400, 'Pick an existing year group');
-
-  /* new dates can create a clash even with the sessions untouched, so the
-     sessions are re-checked whenever either changes */
-  const datesChanged = f.startDate !== batch.startDate || f.endDate !== batch.endDate;
-  const sessionsSent = req.body?.sessions !== undefined;
-  const sessions = sessionsSent || datesChanged
-    ? await validateSessions(sessionsSent ? req.body.sessions : batch.toObject().sessions,
-      { id: batch._id, startDate: f.startDate, endDate: f.endDate })
-    : null;
-
-  Object.assign(batch, f);
-  if (req.body?.order !== undefined) batch.order = orderNum(req.body.order);
-  if (sessions) batch.sessions = sessions;
-
-  let activitiesReplaced = 0;
   await atomically(async session => {
-    await batch.save({ session });
-    if (sessions) activitiesReplaced = await clearActivitiesUnder(batch.toObject().sessions, session, f);
+    await batch.deleteOne({ session });
+    await Exception.deleteMany({ batchId: batch._id }, { session });
+    await audit(req, {
+      action: 'delete', entity: 'batch', entityId: batch._id, name: batch.name,
+      summary: `${(before.sessions || []).length} session(s) removed`, changes: diff(before, {}),
+    }, session);
   });
-  res.json({ ...batch.toObject(), activitiesReplaced });
-}));
 
-router.delete('/batches/:id', wrap(async (req, res) => {
-  if (!validId(req.params.id)) return fail(res, 404, 'Batch not found');
-  const batch = await Batch.findByIdAndDelete(req.params.id);
-  if (!batch) return fail(res, 404, 'Batch not found');
-  res.json({ ok: true });
+  const config = await Config.findOne({ key: 'default' }).lean();
+  const notified = wantsNotify(req)
+    ? await notifyTrainers(req, batchChanges(before, { name: before.name, sessions: [] }, config.slots), `${before.name} removed`)
+    : null;
+  res.json({ ok: true, notified });
 }));
 
 /* ───────────────────────── availability lookup ─────────────────────────
@@ -573,7 +714,7 @@ router.delete('/batches/:id', wrap(async (req, res) => {
    `excludeBatch` leaves the batch being edited out, so its own sessions do
    not read as clashes with itself. */
 
-router.get('/availability', wrap(async (req, res) => {
+router.get('/availability', COORD, wrap(async (req, res) => {
   const raw = req.query.when === undefined ? [] : [].concat(req.query.when);
   const when = [];
 
@@ -669,11 +810,11 @@ router.get('/availability', wrap(async (req, res) => {
 /* Every period the trainer teaches (main or support) in a class that has not
    ended, keyed "Day|slot" → batch name. A finished class no longer holds the
    period; an upcoming one does, or the note would vanish the day it starts. */
-async function classSlotsFor(trainer) {
+async function classSlotsFor(trainer, session = null) {
   const batches = await Batch.find(
     { $or: [{ 'sessions.mainTrainers': trainer }, { 'sessions.supportTrainers': trainer }] },
     { name: 1, startDate: 1, endDate: 1, sessions: 1 },
-  ).lean();
+  ).session(session).lean();
   const taught = new Map();
   for (const b of batches) {
     for (const s of b.sessions || []) {
@@ -689,7 +830,7 @@ async function classSlotsFor(trainer) {
 /* The other direction: a class saved over a period a trainer had logged
    work in takes that period, so the note under it is removed rather than
    left behind as a hidden record. Returns how many were removed. */
-async function clearActivitiesUnder(sessions, session, batch = {}) {
+export async function clearActivitiesUnder(sessions, session, batch = {}) {
   const or = [];
   for (const s of sessions || []) {
     const r = sessionRange(s, batch);
@@ -702,7 +843,7 @@ async function clearActivitiesUnder(sessions, session, batch = {}) {
   return deletedCount;
 }
 
-router.put('/activities', wrap(async (req, res) => {
+router.put('/activities', COORD, wrap(async (req, res) => {
   const trainer = text(req.body?.trainer, 'name', 'trainer name');
   const rawDays = Array.isArray(req.body?.days)
     ? req.body.days
@@ -733,36 +874,43 @@ router.put('/activities', wrap(async (req, res) => {
   /* A class always wins on the board, so a note written under one would be
      stored but never shown — and would surface unannounced if the class were
      ever moved. Refuse it and say which class is in the way. */
-  const taught = await classSlotsFor(trainer);
-  const clashes = [];
-  for (const day of days) {
-    for (const slot of slots) {
-      const batch = taught.get(`${day}|${slot}`);
-      if (batch) clashes.push({ day, slot, batch });
-    }
-  }
-  if (clashes.length) {
-    const list = clashes.map(c => `${c.day} slot ${c.slot + 1} (${config.slots[c.slot]}) — ${c.batch}`).join('; ');
-    return res.status(409).json({
-      error: `${trainer} has a class at ${clashes.length === 1 ? 'that period' : 'these periods'}: ${list}. Move the class in Batches & Sessions, or pick other periods.`,
-      clashes,
-    });
-  }
-
   const value = { kind, label: kind === 'lunch' ? '' : label };
-  await Activity.bulkWrite(days.flatMap(day => slots.map(slot => ({
-    updateOne: { filter: { trainer, day, slot }, update: { $set: { trainer, day, slot, ...value } }, upsert: true },
-  }))));
+  const what = `${kind === 'lunch' ? 'Lunch' : value.label} on ${days.join(', ')}, slot ${slots.map(s => s + 1).join(',')}`;
+  /* the clash check and the write happen together under the schedule lock */
+  await atomically(async session => {
+    await lockSchedule(session);
+    const taught = await classSlotsFor(trainer, session);
+    const clashes = [];
+    for (const day of days) {
+      for (const slot of slots) {
+        const batch = taught.get(`${day}|${slot}`);
+        if (batch) clashes.push(`${day} slot ${slot + 1} (${config.slots[slot]}) — ${batch}`);
+      }
+    }
+    /* covering someone else's class on a coming date also holds that period */
+    const covers = await Exception.find({ type: 'substitute', toTrainer: trainer, day: { $in: days }, slots: { $in: slots }, date: { $gte: today() } }).session(session).lean();
+    for (const e of covers) clashes.push(`${e.date} slot ${e.slots.map(i => i + 1).join('–')} — covering ${e.batch}`);
+    if (clashes.length) {
+      throw httpError(409, `${trainer} has a class at ${clashes.length === 1 ? 'that period' : 'these periods'}: ${clashes.join('; ')}. Move the class in Batches & Sessions, or pick other periods.`);
+    }
+    await Activity.bulkWrite(days.flatMap(day => slots.map(slot => ({
+      updateOne: { filter: { trainer, day, slot }, update: { $set: { trainer, day, slot, ...value } }, upsert: true },
+    }))), { session });
+    await audit(req, { action: 'update', entity: 'activity', name: trainer, summary: `Assigned: ${what}` }, session);
+  });
 
   /* read back what is now stored, so the caller sees the database's answer */
   const docs = await Activity.find({ trainer, day: { $in: days }, slot: { $in: slots } }).sort({ day: 1, slot: 1 }).lean();
-  res.json({ ok: true, count: docs.length, docs });
+  const notified = wantsNotify(req)
+    ? await notifyTrainers(req, new Map([[trainer, [`Assigned work: ${what}`]]]), `work assigned to ${trainer}`)
+    : null;
+  res.json({ ok: true, count: docs.length, docs, notified });
 }));
 
-router.delete('/activities', wrap(async (req, res) => {
+router.delete('/activities', COORD, wrap(async (req, res) => {
   const trainer = text(req.query.trainer || req.body?.trainer, 'name', 'trainer name');
   if (!trainer) return fail(res, 400, 'Say whose activities to clear');
-  const day = str(req.query.day || req.body?.day);
+  const day = text(req.query.day || req.body?.day, 'day');
 
   let rawSlots = [];
   if (req.query.slots !== undefined) {
@@ -781,8 +929,16 @@ router.delete('/activities', wrap(async (req, res) => {
   if (day) filter.day = day;
   if (slots.length) filter.slot = { $in: slots };
 
-  const result = await Activity.deleteMany(filter);
-  res.json({ ok: true, deletedCount: result.deletedCount });
+  let deletedCount = 0;
+  const what = `${day || 'every day'}${slots.length ? `, slot ${slots.map(s => s + 1).join(',')}` : ''}`;
+  await atomically(async session => {
+    ({ deletedCount } = await Activity.deleteMany(filter, { session }));
+    if (deletedCount) await audit(req, { action: 'delete', entity: 'activity', name: trainer, summary: `Cleared ${deletedCount} period(s): ${what}` }, session);
+  });
+  const notified = wantsNotify(req) && deletedCount
+    ? await notifyTrainers(req, new Map([[trainer, [`Assigned work cleared: ${what}`]]]), `work cleared for ${trainer}`)
+    : null;
+  res.json({ ok: true, deletedCount, notified });
 }));
 
 export default router;

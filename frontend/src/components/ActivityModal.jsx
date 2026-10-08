@@ -92,7 +92,8 @@ export default function ActivityModal({
     else if (type === 'afternoon') pick(all.filter(i => i > lunchIndex));
   };
 
-  async function save() {
+  /* `notify`: also email the trainer about it */
+  async function save(notify = false) {
     if (!selectedSlots.length) { setError('Select at least one period/slot.'); return; }
     if (kind === 'other' && !label.trim()) { setError("Say what work is assigned."); return; }
     setBusy(true); setError('');
@@ -103,14 +104,15 @@ export default function ActivityModal({
         slots: selectedSlots,
         kind,
         label: kind === 'lunch' ? '' : label.trim(),
-      });
+      }, notify);
       /* the API answers with what it read back from the database; anything
          short of every picked period means the save did not fully land */
       if (r?.count !== selectedSlots.length) {
         throw new Error(`Only ${r?.count ?? 0} of ${selectedSlots.length} periods were saved — please try again.`);
       }
       onClose();
-      toast(`Saved for ${trainerName} · ${selectedDay}, ${r.count} period${r.count === 1 ? '' : 's'}`);
+      const n = r.notified;
+      toast(`Saved for ${trainerName} · ${selectedDay}, ${r.count} period${r.count === 1 ? '' : 's'}${!n ? '' : n.configured === false ? ' · email is not configured' : n.queued ? ' · emailing the trainer' : ' · the trainer has no email address'}`);
       /* the save has landed; a failed reload just means the board is a beat behind */
       await Promise.resolve(onSaved()).catch(() => {});
     } catch (e) { setError(e.message); }
@@ -150,8 +152,11 @@ export default function ActivityModal({
           </button>
           <span className="spacer" />
           <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={busy || !selectedSlots.length}>
-            {busy ? 'Saving…' : `Save for ${selectedSlots.length} slot${selectedSlots.length > 1 ? 's' : ''}`}
+          <button className="btn btn-ghost" onClick={() => save(false)} disabled={busy || !selectedSlots.length}>
+            {busy ? 'Saving…' : `Save (${selectedSlots.length} slot${selectedSlots.length > 1 ? 's' : ''})`}
+          </button>
+          <button className="btn btn-primary" onClick={() => save(true)} disabled={busy || !selectedSlots.length} title={`Save, then email ${trainerName}`}>
+            Save & notify trainer
           </button>
         </>
       }

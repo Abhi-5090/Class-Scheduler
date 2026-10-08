@@ -10,6 +10,7 @@ import {
   WEEKDAYS_SHORT,
   getMonthCalendarGrid,
   getClassesForDate,
+  holidayOn,
   getMonthStats,
   formatDateLong,
   formatDateRange,
@@ -152,7 +153,7 @@ export default function CalendarView({ data, admin }) {
     setExporting(true);
     try {
       await exportMonthCalendarPDF(data, currentYear, currentMonth, groupFilter);
-      toast(`  calendar downloaded`);
+      toast(`${MONTH_NAMES[currentMonth]} ${currentYear} calendar downloaded`);
     } catch {
       toast('Could not create the PDF — please try again', 'error');
     } finally {
@@ -404,6 +405,7 @@ export default function CalendarView({ data, admin }) {
               {calendarGrid.map((cell) => {
                 const classes = dayClassesMap[cell.dateStr] || [];
                 const hasClasses = classes.length > 0;
+                const holiday = holidayOn(cell.dateStr, data.exceptions);
                 const maxDisplay = 3;
                 const visibleClasses = classes.slice(0, maxDisplay);
                 const overflowCount = classes.length - maxDisplay;
@@ -412,11 +414,11 @@ export default function CalendarView({ data, admin }) {
                 return (
                   <div
                     key={cell.dateStr}
-                    className={`cal-day ${cell.isCurrentMonth ? '' : 'out-month'} ${cell.isToday ? 'is-today' : ''} ${cell.isWeekend ? 'weekend-day' : ''} ${isSelected ? 'is-selected' : ''}`}
+                    className={`cal-day ${cell.isCurrentMonth ? '' : 'out-month'} ${cell.isToday ? 'is-today' : ''} ${cell.isWeekend ? 'weekend-day' : ''} ${holiday && !cell.isWeekend ? 'holiday-day' : ''} ${isSelected ? 'is-selected' : ''}`}
                     onClick={() => handleDayClick(cell.dateStr)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${formatDateLong(cell.dateStr)}: ${classes.length} class${classes.length === 1 ? '' : 'es'}${cell.isWeekend ? ', not a teaching day' : ''}`}
+                    aria-label={`${formatDateLong(cell.dateStr)}: ${holiday ? `holiday, ${holiday.label}` : `${classes.length} class${classes.length === 1 ? '' : 'es'}`}${cell.isWeekend ? ', not a teaching day' : ''}`}
                     aria-pressed={isSelected}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDayClick(cell.dateStr); } }}
                     title={`View schedule for ${cell.dateStr} (${classes.length} class${classes.length === 1 ? '' : 'es'})`}
@@ -427,6 +429,8 @@ export default function CalendarView({ data, admin }) {
                         <span className="cal-day-classes-badge">
                           {classes.length} {classes.length === 1 ? 'class' : 'classes'}
                         </span>
+                      ) : holiday && !cell.isWeekend ? (
+                        <span className="cal-day-holiday" title={holiday.label}>Holiday</span>
                       ) : cell.isWeekend ? (
                         <span className="cal-day-weekend-label">Off</span>
                       ) : null}
@@ -443,6 +447,8 @@ export default function CalendarView({ data, admin }) {
                           </div>
                           <span className="cal-mob-count">{classes.length}</span>
                         </>
+                      ) : holiday && !cell.isWeekend ? (
+                        <span className="cal-mob-weekend-off">Hol</span>
                       ) : cell.isWeekend ? (
                         <span className="cal-mob-weekend-off">Off</span>
                       ) : null}
@@ -450,14 +456,18 @@ export default function CalendarView({ data, admin }) {
 
                     {/* Desktop Full Class Chips (Hidden on mobile <= 680px) */}
                     <div className="cal-desktop-classes">
+                      {holiday && !cell.isWeekend && <div className="cal-holiday-name">{holiday.label}</div>}
                       {visibleClasses.map((c, i) => (
-                        <div key={i} className={`cal-class-chip ${getGroupClass(c.group)}`}>
+                        <div key={i} className={`cal-class-chip ${getGroupClass(c.group)} ${c.cancelled ? 'is-cancelled' : ''} ${c.substitute ? 'is-sub' : ''}`}
+                          title={c.cancelled ? `Cancelled${c.cancelReason ? ` — ${c.cancelReason}` : ''}` : c.substitute ? `${c.substitute.to} covers ${c.substitute.from}` : undefined}>
                           <div className="cal-chip-top">
                             <span className="cal-chip-slot">{c.slotLabel}</span>
                             <span className="cal-chip-hall">{abbreviateVenue(c.venue)}</span>
                           </div>
                           <div className="cal-chip-subj">{c.subject}</div>
                           <div className="cal-chip-batch">{c.batchName}</div>
+                          {c.cancelled && <div className="cal-chip-flag">Cancelled</div>}
+                          {c.substitute && <div className="cal-chip-flag sub">Sub: {c.substitute.to}</div>}
                         </div>
                       ))}
 
@@ -513,7 +523,9 @@ export default function CalendarView({ data, admin }) {
                 <div className="cal-day-panel-empty">
                   <p>No training sessions scheduled for {formatDateLong(selectedDate)}.</p>
                   <span>
-                    {!data.days.includes(WEEKDAYS[(new Date(selectedDate + 'T00:00:00').getDay() + 6) % 7])
+                    {holidayOn(selectedDate, data.exceptions)
+                      ? `Holiday — ${holidayOn(selectedDate, data.exceptions).label}. No classes run.`
+                      : !data.days.includes(WEEKDAYS[(new Date(selectedDate + 'T00:00:00').getDay() + 6) % 7])
                       ? 'Not a teaching day — no faculty or batches allocated.'
                       : 'Classes may be inactive or outside the tentative training dates.'}
                   </span>
@@ -530,6 +542,8 @@ export default function CalendarView({ data, admin }) {
                         <span className="tag dept">{c.group}</span>
                       </div>
                       <div className="cal-day-card-subj">{c.subject}</div>
+                      {c.cancelled && <div className="cal-flag-line">Cancelled this day{c.cancelReason ? ` — ${c.cancelReason}` : ''}</div>}
+                      {c.substitute && <div className="cal-flag-line sub">{c.substitute.to} covers {c.substitute.from}{c.substitute.reason ? ` — ${c.substitute.reason}` : ''}</div>}
                       <div className="cal-day-card-batch">
                         <b>{c.batchName}</b>
                         {c.dept && <span> · Dept: {c.dept}</span>}
@@ -645,6 +659,8 @@ export default function CalendarView({ data, admin }) {
                     <div className="cal-modal-sess-top">
                       <div>
                         <h4 className="cal-modal-sess-title">{c.subject}</h4>
+                        {c.cancelled && <div className="cal-flag-line">Cancelled this day{c.cancelReason ? ` — ${c.cancelReason}` : ''}</div>}
+                        {c.substitute && <div className="cal-flag-line sub">{c.substitute.to} covers {c.substitute.from}</div>}
                         <div className="cal-modal-sess-batch">
                           <b>{c.batchName}</b>
                           {c.dept && <span> · Dept: {c.dept}</span>}

@@ -53,6 +53,9 @@ APP_TZ=Asia/Kolkata                  optional; decides "today" for batch dates
 
 ## Security
 
+- Three roles (admin, coordinator, trainer); a password change, role change or deactivation
+  signs that person out everywhere.
+
 - The admin API only answers the sites in `CLIENT_ORIGIN`, and every write must carry the
   `X-Requested-With: fetch` header the app sends, so other sites cannot forge requests.
 - Login is rate-limited (6 failures per email, 20 per IP, per 15 minutes).
@@ -69,6 +72,33 @@ backend.
 
 The admin account is created on the first boot that finds no matching email. After that
 the seeded password is ignored, so a password changed from the Settings tab sticks.
+
+## Roles and features
+
+| Role | Can |
+| --- | --- |
+| **Admin** | everything — accounts (Users & Roles), Change History, Time Slots & Days, trainers, halls, year groups, imports of any kind |
+| **Coordinator** | the timetable — batches and sessions, assigned work, Holidays & Exceptions, batch imports, notifications, dashboard and workload |
+| **Trainer** | signs in to **My Schedule**: their weekly timetable, the next 30 days as they will really run, and the notices sent to them |
+
+The server enforces every rule; the console only hides what a role cannot use. Accounts are
+created by an admin with a one-time temporary password that must be replaced at first sign-in.
+
+- **Dashboard** — the console's home page: KPIs, weekly trend (dates, holidays and cancellations
+  applied), share by year, trainer workload, hall utilisation, a day × period heatmap, top
+  subjects, upcoming exceptions and recent activity. Every chart has a table view.
+- **Workload** — every trainer's periods by role and utilisation, every hall's booked share;
+  exportable to Excel/CSV.
+- **Free Finder** — who and which hall is free for chosen periods, on a date or every week.
+- **Holidays & Exceptions** — holidays (one day or a range), a cancelled class on a date, a
+  substitute trainer for one class on a date (only free trainers are offered).
+- **Import & Export** — Excel/CSV export of batches, the weekly timetable, exceptions,
+  trainers and halls; import of trainers, halls and batches with a row-by-row check before
+  anything is saved, then all rows or none.
+- **Notifications** — “Save & notify trainers” emails each affected trainer what changed plus
+  their timetable. Configure SMTP in `backend/.env` (see `.env.example`); every attempt is logged.
+- **Change History** — every create, change, delete, import and sign-in, with field-level
+  before/after values. Admin only.
 
 ## How the data is shaped
 

@@ -1,12 +1,12 @@
 import jwt from 'jsonwebtoken';
-import Admin from '../models/Admin.js';
+import User from '../models/User.js';
 
 export const COOKIE = 'cs_token';
 const ALG = 'HS256';
 
-export function signToken(admin) {
+export function signToken(user) {
   return jwt.sign(
-    { sub: String(admin._id), v: admin.tokenVersion || 0 },
+    { sub: String(user._id), v: user.tokenVersion || 0 },
     process.env.JWT_SECRET,
     { expiresIn: '12h', algorithm: ALG },
   );
@@ -27,26 +27,52 @@ export function cookieOptions() {
   };
 }
 
-/* A token is only good while the account it names still exists and its
-   password has not changed since it was issued. */
-export async function requireAdmin(req, res, next) {
-  const token = req.cookies?.[COOKIE];
-  if (!token) return res.status(401).json({ error: 'Not signed in' });
+const expired = (res, message = 'Session expired — please sign in again') => {
+  res.clearCookie(COOKIE, { ...cookieOptions(), maxAge: undefined });
+  return res.status(401).json({ error: message });
+};
 
-  let claims;
-  try {
-    claims = jwt.verify(token, process.env.JWT_SECRET, { algorithms: [ALG] });
-  } catch {
-    return res.status(401).json({ error: 'Session expired — please sign in again' });
-  }
+/*
+ * Any signed-in, active account. A token is only good while its account
+ * exists, is active, and its version matches (a password change, role change
+ * or deactivation bumps the version and so ends every session).
+ *
+ * An account still on an admin-issued temporary password may only reach the
+ * routes that let it change it — `allowPending` marks those.
+ */
+export function requireAuth({ allowPending = false } = {}) {
+  return async (req, res, next) => {
+    const token = req.cookies?.[COOKIE];
+    if (!token) return res.status(401).json({ error: 'Not signed in' });
 
-  try {
-    const admin = await Admin.findById(claims.sub, { email: 1, name: 1, tokenVersion: 1 }).lean();
-    if (!admin || (admin.tokenVersion || 0) !== (claims.v || 0)) {
-      res.clearCookie(COOKIE, { ...cookieOptions(), maxAge: undefined });
-      return res.status(401).json({ error: 'Session expired — please sign in again' });
+    let claims;
+    try {
+      claims = jwt.verify(token, process.env.JWT_SECRET, { algorithms: [ALG] });
+    } catch {
+      return expired(res);
     }
-    req.admin = { sub: String(admin._id), email: admin.email, name: admin.name };
+
+    try {
+      const user = await User.findById(claims.sub, { email: 1, name: 1, role: 1, trainer: 1, active: 1, tokenVersion: 1, mustChangePassword: 1 }).lean();
+      if (!user || !user.active || (user.tokenVersion || 0) !== (claims.v || 0)) return expired(res);
+      req.user = {
+        id: String(user._id), email: user.email, name: user.name || '', role: user.role,
+        trainer: user.trainer ? String(user.trainer) : null, mustChangePassword: !!user.mustChangePassword,
+      };
+      if (user.mustChangePassword && !allowPending) {
+        return res.status(403).json({ error: 'Change your temporary password before continuing', code: 'PASSWORD_CHANGE_REQUIRED' });
+      }
+      next();
+    } catch (err) { next(err); }
+  };
+}
+
+/* Only these roles past this point (use after requireAuth). */
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Your account does not have access to this' });
+    }
     next();
-  } catch (err) { next(err); }
+  };
 }

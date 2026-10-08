@@ -8,6 +8,8 @@ import { useFocusTrap } from './focus.js';
  *   toast('Saved C · Batch-1');                       // success
  *   toast('Could not save', 'error');
  *   if (await confirm({ title, body, confirmLabel: 'Delete', danger: true })) …
+ *   // with `alternate`, a third button resolves to the string 'alternate'
+ *   const r = await confirm({ …, alternate: 'Delete & notify trainers' });   // false | true | 'alternate'
  *
  * Toasts sit fixed in a corner, so they are seen wherever the page is
  * scrolled, and are announced to screen readers. The dialog replaces the
@@ -31,7 +33,10 @@ export function FeedbackProvider({ children }) {
   }, [dismiss]);
 
   const confirm = useCallback(opts => new Promise(resolve => {
-    setDialog({ confirmLabel: 'Confirm', cancelLabel: 'Cancel', ...opts, resolve });
+    setDialog(prev => {
+      prev?.resolve(false);            // never leave an earlier question hanging
+      return { confirmLabel: 'Confirm', cancelLabel: 'Cancel', ...opts, resolve };
+    });
   }), []);
 
   const settle = answer => { dialog?.resolve(answer); setDialog(null); };
@@ -57,7 +62,7 @@ export function FeedbackProvider({ children }) {
   );
 }
 
-function ConfirmDialog({ title, body, confirmLabel, cancelLabel, danger, onAnswer }) {
+function ConfirmDialog({ title, body, confirmLabel, cancelLabel, alternate, danger, onAnswer }) {
   const box = useRef(null);
   useFocusTrap(box, { initial: '[data-autofocus]' });
 
@@ -75,6 +80,9 @@ function ConfirmDialog({ title, body, confirmLabel, cancelLabel, danger, onAnswe
         <div className="modal-foot">
           <span className="spacer" />
           <button type="button" className="btn btn-ghost" onClick={() => onAnswer(false)} data-autofocus>{cancelLabel}</button>
+          {alternate && (
+            <button type="button" className={`btn ${danger ? 'btn-danger' : 'btn-ghost'}`} onClick={() => onAnswer('alternate')}>{alternate}</button>
+          )}
           <button type="button" className={`btn ${danger ? 'btn-danger-solid' : 'btn-primary'}`} onClick={() => onAnswer(true)}>
             {confirmLabel}
           </button>

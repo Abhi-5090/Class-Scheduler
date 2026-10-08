@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useAdmin, homeFor } from '../lib/useAdmin.js';
 import Wordmark from './Wordmark.jsx';
 import ThemeButton from './ThemeButton.jsx';
 import { LockIcon } from './Icons.jsx';
@@ -7,13 +8,14 @@ import { LockIcon } from './Icons.jsx';
  * The hero, unchanged from the original board apart from the Admin button
  * that now sits beside the theme toggle.
  */
-export default function Hero({ admin }) {
+export default function Hero() {
+  const { user } = useAdmin();
   return (
     <div className="hero">
       <div className="hero-actions">
-        <Link className="admin-btn" to={admin ? '/admin' : '/admin/login'}>
+        <Link className="admin-btn" to={user ? homeFor(user) : '/admin/login'}>
           <LockIcon />
-          <span className="lbl-t">{admin ? 'Admin console' : 'Admin'}</span>
+          <span className="lbl-t">{user ? (user.role === 'trainer' ? 'My schedule' : 'Console') : 'Sign in'}</span>
         </Link>
         <ThemeButton />
       </div>

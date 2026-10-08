@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useFeedback } from '../lib/feedback.jsx';
 import { useFocusTrap } from '../lib/focus.js';
 
@@ -67,12 +67,20 @@ export function PageHead({ title, blurb, children }) {
   );
 }
 
+/* A labelled form field. When the field holds a single control, the label is
+   tied to it (htmlFor/id) and the help text described by it, so screen readers
+   announce the field's name and hint. */
 export function Field({ label, help, children }) {
+  const id = useId();
+  const only = Children.count(children) === 1 && isValidElement(children) && ['input', 'select', 'textarea'].includes(children.type);
+  const control = only
+    ? cloneElement(children, { id: children.props.id || id, 'aria-describedby': help ? `${id}-help` : undefined })
+    : children;
   return (
-    <div className="field">
-      {label && <label>{label}</label>}
-      {children}
-      {help && <div className="help">{help}</div>}
+    <div className="field" role={!only && label ? 'group' : undefined} aria-labelledby={!only && label ? `${id}-label` : undefined}>
+      {label && (only ? <label htmlFor={children.props.id || id}>{label}</label> : <label id={`${id}-label`}>{label}</label>)}
+      {control}
+      {help && <div className="help" id={`${id}-help`}>{help}</div>}
     </div>
   );
 }
@@ -123,7 +131,7 @@ export function useTable(rows, { text, sorts, initial, initialDir = 'asc' }) {
   }, [rows, query, sort, text, sorts]);
 
   const toggle = key => setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
-  return { rows: view, query, setQuery, sort, toggle };
+  return { rows: view, query, setQuery, sort, setSort, toggle };
 }
 
 /* A column header that sorts its column; announces the order to screen readers. */

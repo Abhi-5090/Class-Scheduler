@@ -5,10 +5,17 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 
 import { connectDB } from './db.js';
-import Admin from './models/Admin.js';
+import mongoose from 'mongoose';
+import User from './models/User.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
-import scheduleRoutes from './routes/schedule.js';
+import usersRoutes from './routes/users.js';
+import exceptionRoutes from './routes/exceptions.js';
+import importRoutes from './routes/importer.js';
+import insightRoutes from './routes/insights.js';
+import logRoutes from './routes/logs.js';
+import scheduleRoutes, { invalidateSchedule } from './routes/schedule.js';
+import { requireAuth } from './middleware/auth.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -48,8 +55,11 @@ app.use(cors({
   maxAge: 600,
 }));
 
-app.use(express.json({ limit: '200kb' }));
+/* a spreadsheet import posts its rows as JSON, so that one route takes more */
 app.use(cookieParser());
+/* sign-in is checked before the larger body is even read */
+app.use('/api/admin/import', requireAuth(), express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '200kb' }));
 
 /* CSRF guard. Every state-changing call from the app carries this header; a
    form or <img> on another site cannot add a custom header, and a script on
@@ -62,12 +72,23 @@ app.use((req, res, next) => {
 });
 
 /* Admin and auth answers carry personal data and session state — never cache them. */
-app.use(['/api/admin', '/api/auth'], (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use(['/api/admin', '/api/auth', '/api/insights', '/api/logs'], (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+
+/* any successful change through the console makes the public board rebuild */
+app.use('/api/admin', (req, res, next) => {
+  if (req.method !== 'GET') res.on('finish', () => { if (res.statusCode < 400) invalidateSchedule(); });
+  next();
+});
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/admin/users', usersRoutes);
+app.use('/api/admin/exceptions', exceptionRoutes);
+app.use('/api/admin/import', importRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/insights', insightRoutes);
+app.use('/api/logs', logRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: 'No such endpoint' }));
 
@@ -94,27 +115,40 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: err.message || 'Request failed' });
 });
 
-/* The single admin account lives in .env and is hashed into Mongo on first
-   boot. Later boots leave it alone, so a password changed in the UI sticks. */
-async function ensureAdmin() {
+/*
+ * Accounts. Before roles existed there was one admin in the `admins`
+ * collection; on the first boot with roles those move across to `users` as
+ * admins (same id and password, so nobody is signed out). After that, the
+ * account in .env is only created if no user has that email yet — so a
+ * password changed in the UI sticks.
+ */
+async function ensureAccounts() {
+  if (!(await User.estimatedDocumentCount())) {
+    const legacy = await mongoose.connection.db.collection('admins').find().toArray().catch(() => []);
+    for (const a of legacy) {
+      await User.create({ _id: a._id, email: a.email, passwordHash: a.passwordHash, name: a.name || 'Administrator', role: 'admin', tokenVersion: a.tokenVersion || 0 });
+    }
+    if (legacy.length) console.log('  users  ', `moved ${legacy.length} admin account(s) into users`);
+  }
+
   const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) {
     console.warn('  admin   ADMIN_EMAIL / ADMIN_PASSWORD not set — no account seeded');
     return;
   }
-  if (await Admin.findOne({ email })) {
+  if (await User.findOne({ email })) {
     console.log('  admin  ', email, '(existing)');
     return;
   }
-  await Admin.create({ email, passwordHash: await Admin.hash(password) });
+  await User.create({ email, passwordHash: await User.hash(password), role: 'admin', name: 'Administrator' });
   console.log('  admin  ', email, '(created)');
 }
 
 const PORT = process.env.PORT || 4000;
 
 connectDB()
-  .then(ensureAdmin)
+  .then(ensureAccounts)
   .then(() => app.listen(PORT, () => {
     console.log(`  api     http://localhost:${PORT}\n`);
   }))

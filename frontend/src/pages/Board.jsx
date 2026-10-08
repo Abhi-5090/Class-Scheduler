@@ -6,6 +6,7 @@ import Hero from '../components/Hero.jsx';
 import Stats from '../components/Stats.jsx';
 import Loading from '../components/Loading.jsx';
 import NowBar from '../components/NowBar.jsx';
+import WeekNotes from '../components/WeekNotes.jsx';
 import { periodAt, useNow } from '../lib/now.js';
 import BatchCard from '../components/BatchCard.jsx';
 import SoonCard from '../components/SoonCard.jsx';
@@ -173,6 +174,7 @@ export default function Board({ admin }) {
       </div>
 
       <main id="board-main" tabIndex={-1}>
+        <WeekNotes exceptions={data.exceptions} />
         {['daywise', 'trainer', 'venue'].includes(view) && <NowBar now={now} data={data} />}
 
         <section className="panel show" role="tabpanel" id={`panel-${view}`} aria-labelledby={`tab-${view}`}>

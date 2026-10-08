@@ -3,27 +3,41 @@ import { useEffect, useState } from 'react';
 /*
  * "What is running right now?" for the period grid.
  *
- * Slot labels are written 12-hour without AM/PM ("9:00–9:50", "1:40–2:30"),
- * the same convention the server's time labels assume: 8–11 is morning,
- * 12 and 1–7 are afternoon, and anything already 13:00+ is 24-hour.
+ * Slot labels are written 12-hour without AM/PM ("9:00–9:50", "1:40–2:30");
+ * slotWindows() reads them in order through the day to place each one.
  */
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function toMinutes(hhmm) {
-  const [h, m = '0'] = String(hhmm).trim().split(':');
-  let hour = parseInt(h, 10);
-  const min = parseInt(m, 10) || 0;
-  if (!Number.isFinite(hour)) return null;
-  if (hour >= 1 && hour <= 7) hour += 12;
-  return hour * 60 + min;
+function clock(hhmm) {
+  const [h, m = '0'] = String(hhmm ?? '').trim().split(':');
+  const hour = parseInt(h, 10);
+  return Number.isFinite(hour) ? hour * 60 + (parseInt(m, 10) || 0) : null;
 }
 
-/* '9:00–9:50' → { start: 540, end: 590 } (minutes since midnight) */
-export function slotWindow(label) {
-  const [a, b] = String(label || '').split(/[–-]/);
-  const start = toMinutes(a), end = toMinutes(b);
-  return start === null || end === null ? null : { start, end };
+/*
+ * All the slot labels at once → [{ start, end }] in minutes since midnight.
+ * The grid runs forward through the day, so times are read in order: the
+ * first is morning (a 1–6 o'clock first period is read as afternoon), and any
+ * time that would go backwards is moved 12 hours on. "7:30–8:20" then reads as
+ * an early-morning period, "12:50–1:40" as lunchtime, "1:40–2:30" as afternoon.
+ */
+export function slotWindows(labels = []) {
+  let prev = null;
+  const fix = t => {
+    if (t === null) return null;
+    let v = t;
+    if (prev === null) { if (v < 7 * 60) v += 12 * 60; }
+    else while (v < prev) v += 12 * 60;
+    prev = v;
+    return v;
+  };
+  return labels.map(l => {
+    const [a, b] = String(l || '').split(/[–-]/);
+    const start = fix(clock(a)), end = fix(clock(b));
+    return start === null || end === null ? null : { start, end };
+  });
 }
+export const slotWindow = label => slotWindows([label])[0];
 
 /*
  * Where `date` falls on the configured grid:
@@ -37,7 +51,7 @@ export function periodAt(slots = [], days = [], date = new Date()) {
   if (!days.includes(dayName)) return { today: null, current: null, next: null, state: 'off' };
 
   const mins = date.getHours() * 60 + date.getMinutes();
-  const windows = slots.map(slotWindow);
+  const windows = slotWindows(slots);
   let current = null, next = null;
   windows.forEach((w, i) => {
     if (!w) return;

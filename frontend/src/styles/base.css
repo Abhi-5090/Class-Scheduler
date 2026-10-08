@@ -712,3 +712,14 @@ html[data-theme="dark"] .toast.error .toast-ico{background:#0A0A0A; color:#fff}
   .ttgrid{min-width:0 !important}
   a{color:inherit; text-decoration:none}
 }
+
+/* this week's holidays, cancellations and substitutions */
+.weeknotes{display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin:0 0 16px; padding:11px 16px;
+  background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:14px; font-size:13px}
+.weeknotes > b{font-family:'Space Grotesk',sans-serif; padding-top:2px}
+.weeknotes ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px; flex:1; min-width:240px}
+.weeknotes li{display:flex; gap:9px; align-items:baseline; flex-wrap:wrap}
+.weeknotes .feed-tag{font:700 10px 'JetBrains Mono',monospace; letter-spacing:.08em; text-transform:uppercase; padding:2px 8px; border-radius:999px;
+  background:var(--accent-tint); color:var(--accent-strong); border:1px solid var(--accent-soft)}
+.weeknotes .feed-tag.holiday{background:var(--pill-ink-bg); color:var(--pill-ink-tx); border-color:transparent}
+.weeknotes .feed-tag.cancel{background:transparent; color:var(--ink-2); border:1px dashed var(--muted)}

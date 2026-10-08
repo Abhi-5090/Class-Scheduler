@@ -22,6 +22,12 @@ function datePresets(now = new Date()) {
   ];
 }
 
+/* what to tell the person who pressed "Save & notify" */
+export const notifyNote = r => (!r ? ''
+  : r.configured === false ? 'email is not configured, so nobody was emailed'
+  : r.queued ? `emailing ${r.queued} trainer${r.queued === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} without an email address)` : ''}`
+  : r.skipped ? `${r.skipped} trainer(s) have no email address` : 'no trainer was affected');
+
 const emptyBatch = groups => ({
   name: '', group: groups[0]?.name || '', dept: '', count: 0,
   startDate: '', endDate: '',
@@ -140,7 +146,8 @@ export default function BatchesTab() {
     setParams({}, { replace: true });
   }, [batches, params]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function save() {
+  /* `notify`: also email every trainer whose classes this save changes */
+  async function save(notify = false) {
     const draft = editing;
     if (saving) return;                         // a second click while the first is in flight
     if (draft.startDate && draft.endDate && draft.endDate < draft.startDate) {
@@ -157,13 +164,16 @@ export default function BatchesTab() {
         endDate: draft.endDate || '',
         sessions: draft.sessions.map(({ _key, ...s }) => s),
       };
-      if (draft._id) await api.update('batches', draft._id, body);
-      else await api.create('batches', body);
+      const r = draft._id ? await api.update('batches', draft._id, body, notify) : await api.create('batches', body, notify);
 
       setEditing(null);
       await reload();
       announceChange();
-      flash(draft._id ? `Saved ${draft.name}` : `Created ${draft.name}`);
+      const extra = [
+        r.exceptionsRemoved ? `${r.exceptionsRemoved} date exception(s) no longer applied and were removed` : '',
+        notifyNote(r.notified),
+      ].filter(Boolean).join(' · ');
+      flash(`${draft._id ? `Saved ${draft.name}` : `Created ${draft.name}`}${extra ? ` · ${extra}` : ''}`);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -180,14 +190,15 @@ export default function BatchesTab() {
         </>
       ),
       confirmLabel: 'Delete batch',
+      alternate: 'Delete & notify trainers',
       danger: true,
     });
     if (!sure) return;
     try {
-      await api.remove('batches', b._id);
+      const r = await api.remove('batches', b._id, sure === 'alternate');
       await reload();
       announceChange();
-      flash(`Deleted ${b.name}`);
+      flash(`Deleted ${b.name}${r.notified ? ` · ${notifyNote(r.notified)}` : ''}`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -331,7 +342,7 @@ export default function BatchesTab() {
         {!shown.length ? (
           <EmptyState
             title={batches.length ? 'No batches in this year group' : 'No batches yet'}
-            action={groups.length && (
+            action={groups.length > 0 && (
               <button className="btn btn-primary" onClick={() => open(emptyBatch(groups))}>+ New batch</button>
             )}
           >
@@ -566,8 +577,12 @@ export default function BatchesTab() {
               </button>
               <span className="spacer" />
               <button className="btn btn-ghost" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={!editing.name.trim() || saving}>
-                {saving ? 'Saving…' : editing._id ? 'Save changes' : 'Create batch'}
+              <button className="btn btn-ghost" onClick={() => save(false)} disabled={!editing.name.trim() || saving}>
+                {saving ? 'Saving…' : editing._id ? 'Save' : 'Create'}
+              </button>
+              <button className="btn btn-primary" onClick={() => save(true)} disabled={!editing.name.trim() || saving}
+                title="Save, then email every trainer whose classes changed">
+                {editing._id ? 'Save & notify trainers' : 'Create & notify trainers'}
               </button>
             </>
           }

@@ -57,6 +57,30 @@ export const api = {
     call('/auth/password', { method: 'POST', body: { currentPassword, newPassword } }),
 
   config: () => call('/admin/config'),
+
+  /* ── people and access (admin) ── */
+  users: () => call('/admin/users'),
+  createUser: body => call('/admin/users', { method: 'POST', body }),
+  updateUser: (id, body) => call(`/admin/users/${id}`, { method: 'PUT', body }),
+  deleteUser: id => call(`/admin/users/${id}`, { method: 'DELETE' }),
+
+  /* ── holidays and one-off exceptions ── */
+  exceptions: (range = {}) => call(`/admin/exceptions?${new URLSearchParams(range)}`),
+  createException: (body, notify) => call(`/admin/exceptions${notify ? '?notify=1' : ''}`, { method: 'POST', body }),
+  updateException: (id, body) => call(`/admin/exceptions/${id}`, { method: 'PUT', body }),
+  deleteException: (id, notify) => call(`/admin/exceptions/${id}${notify ? '?notify=1' : ''}`, { method: 'DELETE' }),
+
+  /* ── spreadsheet import: rows already parsed in the browser ── */
+  importRows: (kind, rows, dryRun) => call('/admin/import', { method: 'POST', body: { kind, rows, dryRun } }),
+
+  /* ── read-only views ── */
+  analytics: () => call('/insights/analytics'),
+  finder: params => call(`/insights/finder?${new URLSearchParams(params)}`),
+  mySchedule: () => call('/insights/me'),
+  audit: params => call(`/logs/audit?${new URLSearchParams(params)}`),
+  notifications: (status = '') => call(`/logs/notifications${status ? `?status=${status}` : ''}`),
+  mailStatus: () => call('/logs/mail'),
+  mailTest: to => call('/logs/mail/test', { method: 'POST', body: { to } }),
   saveConfig: body => call('/admin/config', { method: 'PUT', body }),
 
   /* `when` is [{day, slots}] — one entry for a single session, every session
@@ -74,9 +98,10 @@ export const api = {
 
   /* groups / trainers / venues / batches all share one CRUD shape */
   list:   kind => call(`/admin/${kind}`),
-  create: (kind, body) => call(`/admin/${kind}`, { method: 'POST', body }),
-  update: (kind, id, body) => call(`/admin/${kind}/${id}`, { method: 'PUT', body }),
-  remove: (kind, id) => call(`/admin/${kind}/${id}`, { method: 'DELETE' }),
+  /* `notify` (batches, activities) also emails every trainer the change touches */
+  create: (kind, body, notify) => call(`/admin/${kind}${notify ? '?notify=1' : ''}`, { method: 'POST', body }),
+  update: (kind, id, body, notify) => call(`/admin/${kind}/${id}${notify ? '?notify=1' : ''}`, { method: 'PUT', body }),
+  remove: (kind, id, notify) => call(`/admin/${kind}/${id}${notify ? '?notify=1' : ''}`, { method: 'DELETE' }),
 
   reorderBatches: items =>
     Promise.all(items.map(item => call(`/admin/batches/${item.id || item._id}`, { method: 'PUT', body: { order: Number(item.order) || 0 } }))),
@@ -84,24 +109,11 @@ export const api = {
     Promise.all(orderedIds.map((id, index) => call(`/admin/batches/${id}`, { method: 'PUT', body: { order: index } }))),
 
   /* what a trainer is doing during a period that isn't a class */
-  setActivity: (payload, day, slot, kind, label) => {
-    // support both legacy setActivity(trainer, day, slot, kind, label) and setActivity({ trainer, day, slots, kind, label })
-    const body = typeof payload === 'object' && payload !== null && payload.trainer
-      ? payload
-      : { trainer: payload, day, slot, kind, label };
-    return call('/admin/activities', { method: 'PUT', body });
-  },
-  clearActivity: (payload, day, slot) => {
-    if (typeof payload === 'object' && payload !== null && payload.trainer) {
-      const q = [`trainer=${encodeURIComponent(payload.trainer)}`];
-      if (payload.day) q.push(`day=${encodeURIComponent(payload.day)}`);
-      if (Array.isArray(payload.slots) && payload.slots.length) q.push(`slots=${payload.slots.join(',')}`);
-      else if (payload.slot !== undefined) q.push(`slot=${payload.slot}`);
-      return call(`/admin/activities?${q.join('&')}`, { method: 'DELETE' });
-    }
-    const q = [`trainer=${encodeURIComponent(payload)}`];
-    if (day) q.push(`day=${encodeURIComponent(day)}`);
-    if (slot !== undefined) q.push(`slot=${slot}`);
-    return call(`/admin/activities?${q.join('&')}`, { method: 'DELETE' });
+  setActivity: ({ trainer, day, slots, kind, label }, notify) =>
+    call(`/admin/activities${notify ? '?notify=1' : ''}`, { method: 'PUT', body: { trainer, day, slots, kind, label } }),
+  clearActivity: ({ trainer, day, slots }, notify) => {
+    const q = new URLSearchParams({ trainer, day, slots: slots.join(',') });
+    if (notify) q.set('notify', '1');
+    return call(`/admin/activities?${q}`, { method: 'DELETE' });
   },
 };

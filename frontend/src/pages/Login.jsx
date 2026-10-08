@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Wordmark from '../components/Wordmark.jsx';
-import { useAdmin } from '../lib/useAdmin.js';
+import { useAdmin, homeFor } from '../lib/useAdmin.js';
 import ThemeButton from '../components/ThemeButton.jsx';
 
 export default function Login() {
-  const { admin, ready, expired, signIn } = useAdmin();
+  const { user, ready, expired, signIn } = useAdmin();
   const navigate = useNavigate();
   const location = useLocation();
   /* only ever return to a page inside the console */
-  const back = typeof location.state?.from === 'string' && location.state.from.startsWith('/admin') ? location.state.from : '/admin';
+  /* only ever return to a page inside the console; otherwise each role's home */
+  const from = typeof location.state?.from === 'string' && location.state.from.startsWith('/admin/') ? location.state.from : '';
+  const back = u => from || homeFor(u);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,15 +20,15 @@ export default function Login() {
 
   useEffect(() => { document.title = 'Sign in · Class Scheduler'; }, []);
 
-  if (ready && admin) return <Navigate to={back} replace />;
+  if (ready && user) return <Navigate to={user.mustChangePassword ? '/admin/settings' : back(user)} replace />;
 
   async function submit(e) {
     e.preventDefault();
     setError('');
     setBusy(true);
     try {
-      await signIn(email, password);
-      navigate(back, { replace: true });
+      const u = await signIn(email, password);
+      navigate(u.mustChangePassword ? '/admin/settings' : back(u), { replace: true });
     } catch (err) {
       setError(err.message);
       setPassword('');

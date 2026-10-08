@@ -1,3 +1,5 @@
+import { getClassesForDate } from '../lib/calendarUtils.js';
+
 /*
  * One line above the day, trainer and hall views saying where today is on the
  * grid: the period running now (and how many classes are in it), the next one,
@@ -5,13 +7,19 @@
  * inside the grids below. `now` is periodAt() from lib/now.js.
  */
 export default function NowBar({ now, data }) {
-  const dayIdx = data.days.indexOf(now.today);
-  const running = slot => (slot === null || dayIdx < 0 ? 0 : data.groups.reduce((n, g) => n + g.batches.reduce(
-    (m, b) => m + (b.rows || []).filter(r => r.dayIndexes?.includes(dayIdx) && r.slots?.includes(slot)).length, 0), 0));
+  const todayIso = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+  /* today's real classes: batch dates, holidays and cancellations applied */
+  const todays = now.today ? getClassesForDate(todayIso, data).filter(c => !c.cancelled) : [];
+  const running = slot => (slot === null ? 0 : todays.filter(c => c.slots.includes(slot)).length);
   const label = i => `Slot ${i + 1} · ${data.slots[i]}`;
 
+  /* a holiday today overrides the weekly timetable */
+  const holiday = (data.exceptions || []).find(e => e.type === 'holiday' && e.date <= todayIso && (e.endDate || e.date) >= todayIso);
+
   let text, live = false;
-  if (now.state === 'off') {
+  if (holiday && now.state !== 'off') {
+    text = <><b>Holiday</b> — {holiday.label}. No classes today.</>;
+  } else if (now.state === 'off') {
     text = <>Today is not a teaching day — showing the weekly timetable.</>;
   } else if (now.state === 'during') {
     live = true;

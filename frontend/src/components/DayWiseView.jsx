@@ -127,7 +127,7 @@ export default function DayWiseView({ data, selectedDay, onSelectDay, query, now
     setExporting(true);
     try {
       await exportDayPDF(data, activeDay);
-      toast(` schedule downloaded`);
+      toast(`${activeDay} schedule downloaded`);
     } catch {
       toast('Could not create the PDF — please try again', 'error');
     } finally { setExporting(false); }
