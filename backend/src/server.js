@@ -28,9 +28,11 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 
 const app = express();
 app.disable('x-powered-by');
-/* Render (and most hosts) sit behind one proxy; trusting it makes req.ip the
-   caller's address, which the login limiter keys on. */
-if (isProd) app.set('trust proxy', 1);
+/* How many proxies sit in front of the API, so req.ip is the real visitor —
+   the login limiter keys on it. Render alone is 1 (the default in production);
+   when the frontend relays /api through Vercel it is 2 (TRUST_PROXY=2). */
+const hops = Number.parseInt(process.env.TRUST_PROXY ?? (isProd ? '1' : '0'), 10);
+if (Number.isInteger(hops) && hops > 0) app.set('trust proxy', hops);
 
 /* An API only ever answers with JSON, so the strictest headers cost nothing. */
 app.use(helmet({

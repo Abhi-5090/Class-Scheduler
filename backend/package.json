@@ -19,5 +19,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.1",
     "nodemailer": "10.0.16"
+  },
+  "engines": {
+    "node": ">=20.10"
   }
 }
