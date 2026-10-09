@@ -678,3 +678,13 @@ html[data-theme="dark"]{ --viz-1:#C9DCFF; --viz-2:#82AAF0; --viz-3:#3D7DE3; --vi
   .stat-value{font-size:22px}
   .stat-hero{font-size:40px}
 }
+
+/* settings: account + email stacked on the left half, password on the right half */
+.settings-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:18px; align-items:stretch}
+.settings-grid > *{min-width:0}
+.settings-grid .card{margin-bottom:0}
+.settings-grid .stack-col > :last-child{flex:1}
+.settings-pw form .btn{margin-top:6px}
+.settings-test{align-items:flex-end}
+.settings-test .field{flex:1; min-width:200px; margin-bottom:0}
+@media(max-width:900px){ .settings-grid{grid-template-columns:minmax(0, 1fr)} }
