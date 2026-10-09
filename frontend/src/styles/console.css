@@ -388,7 +388,7 @@ table.tbl td.act .btn{margin-left:7px}
 
 /* Desktop shows the sidebar; phones and tablets (≤1024px, kept in step with
    DRAWER_QUERY in Console.jsx) get a slim top bar whose Menu button slides the
-   same sidebar in from the right as a drawer. */
+   same sidebar in from the left as a drawer. */
 .topbar, .side-scrim, .side-close{display:none}
 @media(max-width:1024px){
   /* rows hug their content: a short page must not stretch the top bar to fill the screen */
@@ -407,10 +407,10 @@ table.tbl td.act .btn{margin-left:7px}
   .menu-btn:hover, .menu-btn:focus-visible{background:rgba(0,71,171,.45); border-color:rgba(77,139,234,.65)}
   .menu-btn svg{width:20px; height:20px; stroke:currentColor; stroke-width:2; stroke-linecap:round; fill:none}
 
-  /* the drawer: hidden off the right edge until opened */
-  .side{position:fixed; top:0; right:0; bottom:0; left:auto; z-index:120; height:100%; height:100dvh;
-    width:min(320px, 86vw); padding:20px 18px calc(24px + env(safe-area-inset-bottom)); gap:20px;
-    transform:translateX(100%); visibility:hidden; box-shadow:-24px 0 48px -24px rgba(0,0,0,.6);
+  /* the drawer: hidden off the left edge until opened */
+  .side{position:fixed; top:0; left:0; bottom:0; right:auto; z-index:120; height:100%; height:100dvh;
+    width:min(300px, 84vw); padding:20px 18px calc(24px + env(safe-area-inset-bottom)); gap:20px;
+    transform:translateX(-100%); visibility:hidden; box-shadow:24px 0 48px -24px rgba(0,0,0,.6);
     transition:transform .3s var(--ease), visibility 0s linear .3s; overscroll-behavior:contain}
   .menu-open .side{transform:none; visibility:visible; transition:transform .3s var(--ease), visibility 0s}
   .side-mark{position:relative; padding-right:44px}
@@ -424,6 +424,27 @@ table.tbl td.act .btn{margin-left:7px}
     backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .3s}
   .menu-open .side-scrim{opacity:1; pointer-events:auto}
   .main{padding:22px clamp(16px, 3vw, 32px) 48px}
+}
+/* phones: a compact drawer, sized to the screen rather than the desktop sidebar */
+@media(max-width:640px){
+  .side{width:min(272px, 80vw); padding:16px 14px calc(18px + env(safe-area-inset-bottom)); gap:14px}
+  .side-mark{padding-right:40px}
+  .side-mark .wordmark{--wm:28px !important}
+  .side-mark .tag{margin-top:8px; font-size:9px; padding:3px 8px}
+  .side-close{width:34px; height:34px; border-radius:10px}
+  .side-close svg{width:16px; height:16px}
+  .nav{gap:1px}
+  .nav a{font-size:13px; gap:10px; padding:8px 11px; min-height:38px; border-radius:10px}
+  .nav a svg{width:15px; height:15px}
+  .nav a .n{font-size:10px}
+  .nav .nav-sep{margin:7px 2px}
+  .side-foot{padding-top:12px; font-size:11px}
+  .side-foot .who{font-size:12px}
+  .side-foot .row{margin-top:10px; gap:6px}
+  .side-foot a, .side-foot button{font-size:11.5px; padding:7px 12px}
+  .topbar{padding:8px 14px; padding-top:max(8px, env(safe-area-inset-top))}
+  .topbar .wordmark{--wm:26px !important}
+  .menu-btn{min-height:36px}
 }
 @media(max-width:400px){
   .topbar .tag{display:none}

@@ -51,7 +51,7 @@ export const TABS = [
 const ROLE_LABEL = { admin: 'Admin', coordinator: 'Coordinator', trainer: 'Trainer' };
 
 /* Phones and tablets: the sidebar becomes a drawer that slides in from the
-   right. Keep in step with the 1024px breakpoint in console.css. */
+   left. Keep in step with the 1024px breakpoint in console.css. */
 const DRAWER_QUERY = '(max-width: 1024px)';
 const useDrawerLayout = () => {
   const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(DRAWER_QUERY).matches);
