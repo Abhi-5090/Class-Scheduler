@@ -169,15 +169,24 @@ export function StackedBars({ rows, series, unit = 'periods', labelWidth = 120, 
 }
 
 /* ── horizontal single-series bars, value at the tip ── */
-export function Bars({ rows, color = 'var(--viz-1)', max: givenMax, suffix = '', labelWidth = 150, valueLabel = r => `${fmt(r.value)}${suffix}` }) {
-  return <StackedBarsSingle rows={rows} color={color} givenMax={givenMax} labelWidth={labelWidth} valueLabel={valueLabel} suffix={suffix} />;
+/* `fill` stretches the chart edge to edge: the label column shrinks to the
+   longest name, the scale ends at the biggest value (so the longest bar runs
+   the full width) and only the room its number needs is kept on the right. */
+export function Bars({ rows, color = 'var(--viz-1)', max: givenMax, suffix = '', labelWidth = 150, fill = false, valueLabel = r => `${fmt(r.value)}${suffix}` }) {
+  return <StackedBarsSingle rows={rows} color={color} givenMax={givenMax} labelWidth={labelWidth} fill={fill} valueLabel={valueLabel} suffix={suffix} />;
 }
-function StackedBarsSingle({ rows, color, givenMax, labelWidth, valueLabel, suffix }) {
+const textWidth = (str, px) => String(str).length * px;
+function StackedBarsSingle({ rows, color, givenMax, labelWidth: maxLabel, fill, valueLabel, suffix }) {
   const [ref, w] = useWidth();
   const { show, hide } = useTip();
   const row = 30, bar = 16;
-  const max = givenMax || niceMax(Math.max(1, ...rows.map(r => r.value)));
-  const plot = Math.max(40, w - labelWidth - 56);
+  const top = Math.max(1, ...rows.map(r => r.value));
+  const max = givenMax || (fill ? top : niceMax(top));
+  const labelWidth = fill
+    ? Math.min(maxLabel, Math.max(40, ...rows.map(r => textWidth(r.label.length > 22 ? r.label.slice(0, 22) : r.label, 7) + 12)))
+    : maxLabel;
+  const rightPad = fill ? Math.max(14, ...rows.map(r => textWidth(valueLabel(r), 7.5) + 10)) : 56;
+  const plot = Math.max(40, w - labelWidth - rightPad);
   const h = rows.length * row + 22;
   return (
     <div ref={ref} className="chart-svg">

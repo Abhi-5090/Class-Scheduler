@@ -96,7 +96,6 @@
 .theme-btn.on-surface:hover{background:var(--accent-tint); border-color:var(--accent); color:var(--accent-deep);
   box-shadow:0 10px 24px -14px rgba(var(--accent-rgb), .7)}
 
-.console-bar{display:flex; justify-content:flex-end; align-items:center; gap:10px; margin:-6px 0 10px}
 
 @media(max-width:640px){
   .hero-actions{position:absolute; top:16px; right:16px; gap:8px}
@@ -190,8 +189,13 @@
 .side-foot a:hover, .side-foot button:hover{background:rgba(0,71,171,.45); border-color:rgba(77,139,234,.65)}
 
 .main{padding:clamp(22px,3vw,40px) clamp(20px,3vw,44px) 60px; min-width:0}
-.page-head{display:flex; align-items:flex-end; justify-content:space-between; gap:18px; flex-wrap:wrap;
-  margin-bottom:26px; animation:rise .6s var(--ease) both}
+/* title + theme switch share the first row; description + page buttons the second */
+.page-head{display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-areas:"title tools" "blurb actions";
+  align-items:center; column-gap:18px; margin-bottom:26px; animation:rise .6s var(--ease) both}
+.page-head > h1{grid-area:title}
+.page-head-tools{grid-area:tools; justify-self:end; display:flex; align-items:center; gap:10px}
+.page-head-blurb{grid-area:blurb; align-self:start}
+.page-head-actions{grid-area:actions; justify-self:end; align-self:end; flex:none; margin-top:12px; justify-content:flex-end}
 .page-head h1{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:clamp(23px,2.6vw,30px);
   letter-spacing:-.02em; margin:0}
 .page-head p{margin:7px 0 0; color:var(--muted); font-size:13.5px; max-width:64ch; line-height:1.55}
@@ -406,14 +410,10 @@ table.tbl td.act .btn{margin-left:7px}
 
 @media(max-width:640px){
   .card{padding:16px 14px; border-radius:14px}
-  .page-head{flex-direction:column; align-items:flex-start; gap:12px; margin-bottom:18px}
+  /* phones: title and switch stay side by side; description and buttons stack below */
+  .page-head{grid-template-areas:"title tools" "blurb blurb" "actions actions"; margin-bottom:18px}
   .page-head h1{font-size:22px}
-  .page-head .actions, .page-head > div:last-child{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    width:100%;
-  }
+  .page-head-actions{justify-self:stretch; display:flex; flex-wrap:wrap; gap:8px; width:100%}
   .btn-pdf, .btn-primary{flex:1; justify-content:center; min-height:40px}
   
   .tbl-wrap{
@@ -581,12 +581,17 @@ html[data-theme="dark"]{ --viz-1:#C9DCFF; --viz-2:#82AAF0; --viz-3:#3D7DE3; --vi
 
 .dash-grid{display:grid; grid-template-columns:repeat(12, minmax(0, 1fr)); gap:18px; margin-bottom:18px}
 .dash-grid > *{min-width:0}
+.dash-grid > .card{margin-bottom:0}
 .stack-col{display:flex; flex-direction:column; gap:18px}
 .stack-col > .chart-card{flex:1}
+.stack-col > .card{margin-bottom:0}
+/* a "fit" stack keeps its chart at its natural height and lets the card below take any spare room */
+.stack-col.fit > .chart-card{flex:none}
+.stack-col > .grow{flex:1}
 .tip-line em:empty{display:none}
 .span-12{grid-column:span 12} .span-8{grid-column:span 8} .span-7{grid-column:span 7} .span-6{grid-column:span 6}
 .span-5{grid-column:span 5} .span-4{grid-column:span 4}
-@media(max-width:1180px){ .span-8, .span-7, .span-5{grid-column:span 6} .span-4{grid-column:span 6} .dash-grid > .span-4:last-child{grid-column:span 12} }
+@media(max-width:1180px){ .span-8, .span-7, .span-5{grid-column:span 6} .span-4{grid-column:span 6} .dash-grid > .span-4:last-child{grid-column:span 12} .dash-grid > .stack-col.fit{grid-column:span 12} }
 @media(max-width:860px){ .dash-grid > *{grid-column:span 12 !important} .hero-kpi{grid-column:span 1} }
 
 /* ═══════════ new console pages ═══════════ */

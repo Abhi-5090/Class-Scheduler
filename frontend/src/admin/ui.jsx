@@ -1,5 +1,6 @@
 import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useFeedback } from '../lib/feedback.jsx';
+import ThemeButton from '../components/ThemeButton.jsx';
 import { useFocusTrap } from '../lib/focus.js';
 
 /* ── modal ─────────────────────────────────────────────────────────────── */
@@ -58,11 +59,15 @@ export function Modal({ title, sub, children, onClose, footer, wide, dirty = fal
 }
 
 /* ── page scaffolding ──────────────────────────────────────────────────── */
+/* Every console page's header: the title with the theme switch level with it
+   on the right, then the description, with the page's own buttons beside it. */
 export function PageHead({ title, blurb, children }) {
   return (
     <div className="page-head">
-      <div><h1>{title}</h1>{blurb && <p>{blurb}</p>}</div>
-      {children && <div className="card-row" style={{ flex: 'none' }}>{children}</div>}
+      <h1>{title}</h1>
+      <div className="page-head-tools"><ThemeButton surface /></div>
+      {blurb && <p className="page-head-blurb">{blurb}</p>}
+      {children && <div className="card-row page-head-actions">{children}</div>}
     </div>
   );
 }

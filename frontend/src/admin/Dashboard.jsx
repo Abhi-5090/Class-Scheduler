@@ -141,13 +141,16 @@ export default function Dashboard() {
           <Columns data={a.byDay.map(d => ({ label: d.day, short: d.day.slice(0, 3), value: d.periods, tip: [['Periods', d.periods], ['Classes', d.classes]] }))} highlight={todayIdx} />
         </ChartCard>
 
-        <ChartCard className="span-4" title="Top subjects"
-          sub="Weekly periods per subject."
+        {/* left two-thirds: top subjects, with what is coming up beneath it;
+            right third: recent activity alongside both */}
+        <div className="span-8 stack-col fit">
+        <ChartCard title="Top subjects"
+          sub="Weekly class periods per subject, most taught first."
           table={{ columns: ['Subject', 'Periods per week'], rows: a.topSubjects.map(s => [s.subject, s.periods]) }}>
-          <Bars rows={a.topSubjects.map(s => ({ label: s.subject, value: s.periods }))} labelWidth={150} />
+          <Bars rows={a.topSubjects.map(s => ({ label: s.subject, value: s.periods, tip: [['Periods per week', s.periods]] }))} labelWidth={170} fill />
         </ChartCard>
 
-        <section className="card span-4">
+        <section className="card grow">
           <h2>Coming up · next 30 days</h2>
           <p className="sub">Holidays, cancelled classes and substitutions.</p>
           {!a.upcomingExceptions.length ? <EmptyState title="Nothing out of the ordinary">The weekly timetable runs as planned.</EmptyState> : (
@@ -163,6 +166,7 @@ export default function Dashboard() {
           )}
           {can('admin', 'coordinator') && <Link className="btn btn-ghost btn-sm" to="/admin/exceptions">Manage holidays & exceptions</Link>}
         </section>
+        </div>
 
         <section className="card span-4">
           <h2>{can('admin') ? 'Recent activity' : 'Notifications'}</h2>
