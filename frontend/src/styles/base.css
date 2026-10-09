@@ -1,3 +1,5 @@
+/* stop phone browsers enlarging text on first load (it snapped back after a reload) */
+html{-webkit-text-size-adjust:100%; text-size-adjust:100%}
 /* ── Palette ─────────────────────────────────────────────
    Three colours: cobalt #0047AB, black, white. Everything else is a tint or
    shade of those three.
@@ -97,6 +99,8 @@ body{margin:0; color:var(--ink); font-family:'Inter',system-ui,sans-serif; -webk
 .seg[data-view="trainer"] button.on{color:var(--pill-ink-tx)}
 .seg[data-view="venue"] .pill{background:var(--accent-grad-deep); box-shadow:0 8px 18px -8px rgba(var(--accent-rgb), .7)}
 .seg button.on{color:#fff}
+/* icons are sized by their surroundings; this default keeps a stray one from filling its box */
+svg.ico{width:16px; height:16px; flex:none}
 .seg .ico{width:17px;height:17px;stroke-width:2.1}
 .filters{display:flex; gap:7px; flex-wrap:wrap}
 .chip{font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600; border:1px solid var(--line); background:var(--card); color:var(--ink-2); padding:8px 12px; border-radius:999px; cursor:pointer; transition:.16s;}
@@ -723,3 +727,25 @@ html[data-theme="dark"] .toast.error .toast-ico{background:#0A0A0A; color:#fff}
   background:var(--accent-tint); color:var(--accent-strong); border:1px solid var(--accent-soft)}
 .weeknotes .feed-tag.holiday{background:var(--pill-ink-bg); color:var(--pill-ink-tx); border-color:transparent}
 .weeknotes .feed-tag.cancel{background:transparent; color:var(--ink-2); border:1px dashed var(--muted)}
+
+/* ── tablets and phones: board header ── */
+/* five stat tiles: 3 + 2 on tablets, 2 + 2 + 1 (full width) on phones, never one orphan */
+@media(max-width:1080px) and (min-width:641px){
+  .stats{grid-template-columns:repeat(6, minmax(0, 1fr))}
+  .stats > *{grid-column:span 2}
+  .stats > :nth-child(4):nth-last-child(2), .stats > :nth-child(5):nth-last-child(1){grid-column:span 3}
+}
+@media(max-width:640px){
+  .stats > :last-child:nth-child(odd){grid-column:1 / -1}
+}
+/* tablets: the view switcher spans the row with short labels instead of running off the edge */
+@media(max-width:1080px) and (min-width:641px){
+  .control{flex-wrap:wrap}
+  .seg{display:flex; width:100%; overflow-x:auto; scrollbar-width:none}
+  .seg::-webkit-scrollbar{display:none}
+  .seg button{flex:1 0 auto; justify-content:center; white-space:nowrap}
+}
+@media(max-width:860px) and (min-width:641px){
+  .seg .tab-full{display:none}
+  .seg .tab-abbr{display:inline}
+}

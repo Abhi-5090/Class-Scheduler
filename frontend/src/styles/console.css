@@ -315,7 +315,7 @@ table.tbl td.act .btn{margin-left:7px}
 .chips-edit{display:flex; flex-direction:column; gap:8px}
 .chips-edit .line{display:flex; gap:9px; align-items:center}
 .chips-edit .line .ix{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); width:26px; flex:none}
-.chips-edit .line input{flex:1; font-family:'JetBrains Mono',monospace; font-size:13px; border:1px solid var(--line);
+.chips-edit .line input{flex:1; min-width:0; font-family:'JetBrains Mono',monospace; font-size:13px; border:1px solid var(--line);
   background:var(--surface); color:var(--ink); border-radius:10px; padding:9px 12px; outline:none}
 .chips-edit .line input:focus{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
 .chips-edit .line button{flex:none}
@@ -378,35 +378,59 @@ table.tbl td.act .btn{margin-left:7px}
 .arrange-preview-card span{font-size:10.5px; color:var(--muted)}
 
 /* ── console responsive system ── */
-.side-toggle{display:none}
-@media(max-width:960px){
-  .console{grid-template-columns:1fr}
-  .side{
-    position:sticky;
-    top:0;
-    z-index:100;
-    height:auto;
-    flex-direction:column;
-    padding:14px 16px;
-    /* stays on the dark band: the wordmark and nav are drawn for it */
-    border-bottom:1px solid rgba(255,255,255,.08);
-  }
-  .side-head{margin-bottom:10px}
-  .nav{
-    display:flex;
-    flex-direction:row;
-    overflow-x:auto;
-    gap:6px;
-    padding-bottom:4px;
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:none;
-  }
-  .nav::-webkit-scrollbar{display:none}
-  .nav a{flex:none; padding:8px 13px; font-size:12.5px; white-space:nowrap}
-  .nav a .n{display:none}
-  .nav .nav-sep{display:none}
-  .side-foot{display:none}
+/* tablets and narrow laptops: description and page buttons each get the full
+   width under the title, rather than squeezing side by side */
+@media(max-width:1280px){
+  .page-head{grid-template-areas:"title tools" "blurb blurb" "actions actions"}
+  .page-head p{max-width:none}
+  .page-head-actions{justify-self:start; justify-content:flex-start}
 }
+
+/* Desktop shows the sidebar; phones and tablets (≤1024px, kept in step with
+   DRAWER_QUERY in Console.jsx) get a slim top bar whose Menu button slides the
+   same sidebar in from the right as a drawer. */
+.topbar, .side-scrim, .side-close{display:none}
+@media(max-width:1024px){
+  /* rows hug their content: a short page must not stretch the top bar to fill the screen */
+  .console{grid-template-columns:minmax(0, 1fr); align-content:start}
+  .topbar{display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:90;
+    padding:10px 16px; padding-top:max(10px, env(safe-area-inset-top));
+    background:linear-gradient(170deg,var(--hero-a) 0%, var(--hero-b) 70%, var(--hero-c) 100%); color:#fff;
+    border-bottom:1px solid rgba(255,255,255,.08); box-shadow:0 8px 20px -16px rgba(0,0,0,.7)}
+  .topbar-mark{display:flex; text-decoration:none; color:inherit; min-width:0}
+  .topbar .wordmark{display:flex}
+  .topbar .tag{font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:600; letter-spacing:.16em; text-transform:uppercase;
+    color:#A9C4EE; background:rgba(77,139,234,.16); border:1px solid rgba(77,139,234,.38); padding:3px 8px; border-radius:999px}
+  .menu-btn{margin-left:auto; display:inline-flex; align-items:center; gap:8px; min-height:40px; padding:0 14px 0 11px; cursor:pointer;
+    border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#fff;
+    font:600 13px 'Space Grotesk',sans-serif; transition:background .2s, border-color .2s}
+  .menu-btn:hover, .menu-btn:focus-visible{background:rgba(0,71,171,.45); border-color:rgba(77,139,234,.65)}
+  .menu-btn svg{width:20px; height:20px; stroke:currentColor; stroke-width:2; stroke-linecap:round; fill:none}
+
+  /* the drawer: hidden off the right edge until opened */
+  .side{position:fixed; top:0; right:0; bottom:0; left:auto; z-index:120; height:100%; height:100dvh;
+    width:min(320px, 86vw); padding:20px 18px calc(24px + env(safe-area-inset-bottom)); gap:20px;
+    transform:translateX(100%); visibility:hidden; box-shadow:-24px 0 48px -24px rgba(0,0,0,.6);
+    transition:transform .3s var(--ease), visibility 0s linear .3s; overscroll-behavior:contain}
+  .menu-open .side{transform:none; visibility:visible; transition:transform .3s var(--ease), visibility 0s}
+  .side-mark{position:relative; padding-right:44px}
+  .side-close{display:grid; place-items:center; position:absolute; top:0; right:0; width:38px; height:38px; cursor:pointer;
+    border-radius:12px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.07); color:#fff}
+  .side-close:hover, .side-close:focus-visible{background:rgba(0,71,171,.45); border-color:rgba(77,139,234,.65)}
+  .side-close svg{width:18px; height:18px; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; fill:none}
+  .nav a{padding:12px 13px; min-height:46px}
+
+  .side-scrim{display:block; position:fixed; inset:0; z-index:110; background:rgba(4,8,16,.55);
+    backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .3s}
+  .menu-open .side-scrim{opacity:1; pointer-events:auto}
+  .main{padding:22px clamp(16px, 3vw, 32px) 48px}
+}
+@media(max-width:400px){
+  .topbar .tag{display:none}
+  .menu-btn span{display:none}
+  .menu-btn{width:42px; padding:0; justify-content:center}
+}
+@media (prefers-reduced-motion:reduce){ .side, .side-scrim{transition:none !important} }
 
 @media(max-width:640px){
   .card{padding:16px 14px; border-radius:14px}
@@ -414,7 +438,9 @@ table.tbl td.act .btn{margin-left:7px}
   .page-head{grid-template-areas:"title tools" "blurb blurb" "actions actions"; margin-bottom:18px}
   .page-head h1{font-size:22px}
   .page-head-actions{justify-self:stretch; display:flex; flex-wrap:wrap; gap:8px; width:100%}
-  .btn-pdf, .btn-primary{flex:1; justify-content:center; min-height:40px}
+  /* the page's buttons share each row evenly, so no single one sits stretched alone */
+  .page-head-actions > *{flex:1 1 auto; justify-content:center; min-height:40px}
+  .btn-pdf, .btn-primary{justify-content:center; min-height:40px}
   
   .tbl-wrap{
     margin:0 -14px;
@@ -460,9 +486,12 @@ table.tbl td.act .btn{margin-left:7px}
 .tbl-note{font-size:12px; color:var(--muted); margin:0 0 10px}
 .clash-link{color:var(--accent-strong); font-weight:700; text-decoration:underline; text-underline-offset:2px}
 
-/* Under 720px a wide table turns into one card per row: each cell shows its
-   column name beside its value, so nothing needs sideways scrolling. */
-@media(max-width:720px){
+/* Tables follow the width of their own card, not the screen, since the
+   sidebar takes room on laptops but not on tablets. Under 860px of card a wide
+   table turns into one card per row: each cell shows its column name beside
+   its value, so nothing needs sideways scrolling. */
+.tbl-wrap{container:tbl / inline-size}
+@container tbl (max-width: 860px){
   .tbl.stack thead{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
   .tbl.stack, .tbl.stack tbody, .tbl.stack tr, .tbl.stack td{display:block; width:100%}
   .tbl.stack tr{border:1px solid var(--line); border-radius:14px; padding:6px 12px; margin-bottom:12px; background:var(--card)}
@@ -473,8 +502,10 @@ table.tbl td.act .btn{margin-left:7px}
   .tbl.stack td[data-label]::before{content:attr(data-label); font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
     letter-spacing:.12em; text-transform:uppercase; color:var(--muted); text-align:left; flex:none}
   .tbl.stack td.act{justify-content:flex-end; flex-wrap:wrap; gap:6px}
-  .tbl.stack td.act .btn{margin:0}
-  .tbl-wrap{margin:0; padding:0; overflow:visible}
+  .tbl.stack td.act .btn{margin:0; width:auto}
+}
+@media(max-width:900px){
+  .tbl-wrap:has(> .tbl.stack){margin:0; padding:0; overflow:visible}
   .admin-search{max-width:none; width:100%}
 }
 
@@ -492,12 +523,22 @@ table.tbl td.act .btn{margin-left:7px}
 }
 
 /* the batch name is what you scan for; actions stay compact on one line */
-@media(min-width:721px){
+@container tbl (min-width: 861px){
   table.tbl td.nm{min-width:170px}
   table.tbl.stack th{padding:0 10px 11px}
   table.tbl.stack td{padding:12px 10px}
   table.tbl td.act .btn-sm{padding:6px 11px}
   table.tbl td.act .btn{margin-left:5px}
+}
+/* a mid-width card (landscape tablet, small laptop beside the sidebar): a row's
+   action buttons stack in their column so the last column is never cut off */
+@container tbl (min-width: 861px) and (max-width: 1100px){
+  table.tbl td.act{white-space:normal; width:1%}
+  table.tbl td.act .btn{display:flex; justify-content:center; width:100%; min-width:84px; margin:0 0 5px}
+  table.tbl td.act .btn:last-child{margin-bottom:0}
+  table.tbl td.nm{min-width:140px}
+  table.tbl.stack th{padding:0 7px 11px}
+  table.tbl.stack td{padding:12px 7px}
 }
 
 /* ═══════════ charts ═══════════
@@ -688,3 +729,12 @@ html[data-theme="dark"]{ --viz-1:#C9DCFF; --viz-2:#82AAF0; --viz-3:#3D7DE3; --vi
 .settings-test{align-items:flex-end}
 .settings-test .field{flex:1; min-width:200px; margin-bottom:0}
 @media(max-width:900px){ .settings-grid{grid-template-columns:minmax(0, 1fr)} }
+
+/* phones: a period row (number, time, lunch, remove) stays on one line */
+@media(max-width:480px){
+  .chips-edit .line{gap:6px}
+  .chips-edit .line .ix{width:16px}
+  .chips-edit .line input{padding-left:10px; padding-right:8px; font-size:12.5px}
+  .chips-edit .line .btn-sm{padding:6px 9px; font-size:12px}
+}
+

@@ -167,6 +167,12 @@
   line-height: 1;
 }
 
+.cal-mode-btn .ico {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
 .cal-mode-btn:hover {
   color: var(--accent);
 }

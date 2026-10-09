@@ -1,9 +1,10 @@
-import { Suspense, useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Wordmark from '../components/Wordmark.jsx';
 import { Spinner } from './ui.jsx';
 import { useAdmin } from '../lib/useAdmin.js';
 import { api } from '../lib/api.js';
+import { useFocusTrap } from '../lib/focus.js';
 
 const ICONS = {
   dashboard: <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6" /></svg>,
@@ -49,10 +50,44 @@ export const TABS = [
 
 const ROLE_LABEL = { admin: 'Admin', coordinator: 'Coordinator', trainer: 'Trainer' };
 
+/* Phones and tablets: the sidebar becomes a drawer that slides in from the
+   right. Keep in step with the 1024px breakpoint in console.css. */
+const DRAWER_QUERY = '(max-width: 1024px)';
+const useDrawerLayout = () => {
+  const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(DRAWER_QUERY).matches);
+  useEffect(() => {
+    const mq = matchMedia(DRAWER_QUERY);
+    const change = () => setOn(mq.matches);
+    mq.addEventListener('change', change);
+    return () => mq.removeEventListener('change', change);
+  }, []);
+  return on;
+};
+
+/* mounted only while the drawer is open, so focus moves in and comes back out */
+function TrapFocus({ box }) { useFocusTrap(box); return null; }
+
 export default function Console() {
   const { user, signOut } = useAdmin();
   const navigate = useNavigate();
   const [counts, setCounts] = useState(null);
+  const { pathname } = useLocation();
+  const drawer = useDrawerLayout();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const side = useRef(null);
+  const open = drawer && menuOpen;
+
+  /* picking a page closes the menu; so does widening past the drawer layout */
+  useEffect(() => { setMenuOpen(false); }, [pathname, drawer]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const esc = e => { if (e.key === 'Escape') setMenuOpen(false); };
+    addEventListener('keydown', esc);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { removeEventListener('keydown', esc); document.body.style.overflow = prev; };
+  }, [open]);
 
   useEffect(() => { document.title = 'Console · Class Scheduler'; }, []);
 
@@ -73,11 +108,28 @@ export default function Console() {
   const nav = tabs.filter((t, i) => !t.sep || (i > 0 && i < tabs.length - 1 && !tabs[i - 1].sep));
 
   return (
-    <div className="console">
-      <aside className="side">
+    <div className={`console ${open ? 'menu-open' : ''}`}>
+      {/* phones and tablets: a slim bar with the name on the left, the menu button on the right */}
+      <header className="topbar">
+        <Link to="/admin" className="topbar-mark" aria-label="Class Scheduler console home"><Wordmark size={30} /></Link>
+        <span className="tag">{ROLE_LABEL[user?.role] || 'Console'}</span>
+        <button type="button" className="menu-btn" aria-label="Open menu" aria-expanded={open} aria-controls="console-menu"
+          onClick={() => setMenuOpen(true)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          <span>Menu</span>
+        </button>
+      </header>
+      <div className="side-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+
+      <aside className="side" id="console-menu" ref={side}
+        role={drawer ? 'dialog' : undefined} aria-modal={open || undefined} aria-label={drawer ? 'Menu' : undefined}>
+        {open && <TrapFocus box={side} />}
         <div className="side-mark">
           <Wordmark size={34} />
           <div><span className="tag">{ROLE_LABEL[user?.role] || 'Console'}</span></div>
+          <button type="button" className="side-close" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
 
         <nav className="nav" aria-label="Console">
